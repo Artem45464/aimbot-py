@@ -11,7 +11,8 @@ COLOR_TOLERANCE = 35  # Dynamically adjustable tolerance
 # Capture screen
 def capture_screen():
     with mss.mss() as sct:
-        screen = sct.grab(sct.monitors[1])  # Full screen capture
+        # Capture the primary screen (use sct.monitors[0] for the primary monitor)
+        screen = sct.grab(sct.monitors[0])  # Full screen capture
         img = np.array(screen)  # Convert to NumPy array
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)  # Convert to BGR
 
@@ -29,20 +30,20 @@ def find_target(img):
     lower = np.array([max(0, c - COLOR_TOLERANCE) for c in TARGET_COLOR], dtype=np.uint8)
     upper = np.array([min(255, c + COLOR_TOLERANCE) for c in TARGET_COLOR], dtype=np.uint8)
 
-    # Create a mask
+    # Create a mask to isolate the target color range
     mask = cv2.inRange(img, lower, upper)
 
     # Improve detection by making color blobs bigger
     mask = cv2.dilate(mask, None, iterations=3)
 
-    # Find contours
+    # Find contours (objects) in the mask
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if contours:
-        # Find largest contour (biggest enemy on screen)
+        # Find the largest contour (assumed to be the target)
         largest = max(contours, key=cv2.contourArea)
 
-        # Get exact center of enemy
+        # Get the moments of the contour to find its center
         M = cv2.moments(largest)
         if M["m00"] != 0:
             target_x = int(M["m10"] / M["m00"])
@@ -62,12 +63,12 @@ def move_mouse(target_pos):
     if target_pos:
         print(f"Aiming at {target_pos}")
 
-        # Move smoothly to target to bypass anti-cheat detection
+        # Move smoothly to the target to avoid detection
         pyautogui.moveTo(target_pos[0], target_pos[1], duration=0.02, tween=pyautogui.easeInOutQuad)
 
-        # Click multiple times for better accuracy
+        # Simulate a more natural clicking behavior with a slight delay
         pyautogui.click()
-        pyautogui.click()  # Double click ensures accuracy
+        time.sleep(0.1)  # Short delay to avoid rapid clicking
 
 # Main loop
 def aimbot():
@@ -78,6 +79,8 @@ def aimbot():
             target = find_target(screen)
             if target:
                 move_mouse(target)
+            else:
+                print("No target detected.")  # Log when no target is found
     except KeyboardInterrupt:
         print("\nAimbot stopped.")
 
