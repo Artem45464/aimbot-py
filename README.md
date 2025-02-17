@@ -17,11 +17,7 @@ This project is an aimbot designed to automatically target enemies on the screen
 - numpy
 - opencv-python
 
-## Install dependencies
-First, clone the repository:
-```bash
-git clone https://github.com/your-username/aimbot.git
-```
+
 
 ## Usage
 1. After cloning the repository and installing the dependencies, open the script `aimbot.py` in your preferred IDE or editor.
