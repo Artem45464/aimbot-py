@@ -8,6 +8,9 @@ import time
 TARGET_COLOR = (255, 0, 0)  # Red in BGR format
 COLOR_TOLERANCE = 35  # Dynamically adjustable tolerance
 
+# Minimum contour area threshold
+MIN_CONTOUR_AREA = 100
+
 # Capture screen
 def capture_screen():
     with mss.mss() as sct:
@@ -33,29 +36,37 @@ def find_target(img):
     # Create a mask to isolate the target color range
     mask = cv2.inRange(img, lower, upper)
 
-    # Improve detection by making color blobs bigger
+    # Clean up the mask (remove small noise)
+    mask = cv2.erode(mask, None, iterations=1)
     mask = cv2.dilate(mask, None, iterations=3)
 
     # Find contours (objects) in the mask
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if contours:
-        # Find the largest contour (assumed to be the target)
-        largest = max(contours, key=cv2.contourArea)
+        # Filter out small contours
+        contours = [cnt for cnt in contours if cv2.contourArea(cnt) > MIN_CONTOUR_AREA]
 
-        # Get the moments of the contour to find its center
-        M = cv2.moments(largest)
-        if M["m00"] != 0:
-            target_x = int(M["m10"] / M["m00"])
-            target_y = int(M["m01"] / M["m00"])
-        else:
-            return None
+        if contours:
+            # Log the contours to understand if they are correct
+            print(f"Detected contours: {len(contours)}")
 
-        # Convert to full screen coordinates
-        target_x = int(target_x * screen_width / img_width)
-        target_y = int(target_y * screen_height / img_height)
+            # Find the largest contour (assumed to be the target)
+            largest = max(contours, key=cv2.contourArea)
 
-        return target_x, target_y
+            # Get the moments of the contour to find its center
+            M = cv2.moments(largest)
+            if M["m00"] != 0:
+                target_x = int(M["m10"] / M["m00"])
+                target_y = int(M["m01"] / M["m00"])
+            else:
+                return None
+
+            # Convert to full screen coordinates
+            target_x = int(target_x * screen_width / img_width)
+            target_y = int(target_y * screen_height / img_height)
+
+            return target_x, target_y
     return None
 
 # Move mouse with precision
@@ -64,7 +75,7 @@ def move_mouse(target_pos):
         print(f"Aiming at {target_pos}")
 
         # Move smoothly to the target to avoid detection
-        pyautogui.moveTo(target_pos[0], target_pos[1], duration=0.02, tween=pyautogui.easeInOutQuad)
+        pyautogui.moveTo(target_pos[0] + np.random.randint(-5, 5), target_pos[1] + np.random.randint(-5, 5), duration=0.02)
 
         # Simulate a more natural clicking behavior with a slight delay
         pyautogui.click()
@@ -76,13 +87,23 @@ def aimbot():
     try:
         while True:
             screen = capture_screen()
+
+            # Check if screen capture is successful (this should never be None)
+            if screen is None:
+                raise ValueError("Error capturing screen.")
+
             target = find_target(screen)
             if target:
                 move_mouse(target)
             else:
                 print("No target detected.")  # Log when no target is found
+
+            # Reduce the loop frequency (increase delay for better performance)
+            time.sleep(0.05)  # 20 FPS equivalent; adjust as needed
     except KeyboardInterrupt:
         print("\nAimbot stopped.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     aimbot()
