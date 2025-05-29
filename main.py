@@ -22,6 +22,67 @@ SCAN_KEY = 'y'      # Key to toggle scanning on/off
 AIM_KEY = 'f'       # Key to aim at the last found target (changed from 'a' to avoid WASD conflicts)
 EXIT_KEY = 'q'      # Key to exit
 
+# Check for required dependencies
+def check_dependencies():
+    missing = []
+    try:
+        import pyautogui
+    except ImportError:
+        missing.append("pyautogui")
+    
+    try:
+        import mss
+    except ImportError:
+        missing.append("mss")
+        
+    # Platform-specific checks
+    if platform.system() == 'Windows':
+        try:
+            import ctypes
+        except ImportError:
+            missing.append("ctypes")
+    elif platform.system() == 'Darwin':
+        try:
+            from Quartz import CGDisplayBounds
+        except ImportError:
+            missing.append("pyobjc-framework-Quartz")
+    
+    if missing:
+        print(f"Warning: Missing dependencies: {', '.join(missing)}")
+        print("Some features may not work correctly.")
+        return False
+    return True
+
+# Helper function to find primary monitor
+def get_primary_monitor(sct):
+    try:
+        # Try to find the primary monitor
+        if platform.system() == 'Windows':
+            # On Windows, try to use Win32 API to find primary
+            try:
+                import ctypes
+                primary_index = 0
+                for i, monitor in enumerate(sct.monitors[1:], 1):
+                    if monitor.get("left") == 0 and monitor.get("top") == 0:
+                        primary_index = i
+                        break
+                return sct.monitors[primary_index]
+            except Exception:
+                return sct.monitors[1]  # Fallback to default
+        elif platform.system() == 'Linux':
+            # Try to find primary monitor on Linux
+            for i, monitor in enumerate(sct.monitors[1:], 1):
+                if monitor.get("left") == 0 and monitor.get("top") == 0:
+                    return sct.monitors[i]
+            return sct.monitors[1]  # Fallback to default
+        elif platform.system() == 'Darwin':
+            return sct.monitors[0]  # On macOS, monitor 0 is the primary display
+        else:
+            return sct.monitors[0]  # Default for other platforms
+    except Exception:
+        # Fallback to first monitor
+        return sct.monitors[0]
+
 # Capture screen with region option for better performance
 def capture_screen(region=None):
     try:
@@ -34,29 +95,17 @@ def capture_screen(region=None):
                           "width": region[2], "height": region[3]}
                 screen = sct.grab(monitor)
             else:
-                # Handle different OS monitor configurations
-                if platform.system() == 'Linux':
-                    # On Linux, sct.monitors[0] is the entire virtual screen
-                    # Use monitor 1 which is the primary display
-                    screen = sct.grab(sct.monitors[1])
-                elif platform.system() == 'Windows':
-                    # On Windows, make sure we're using the primary monitor
-                    primary_monitor = sct.monitors[1]  # Usually monitor 1 is primary on Windows
-                    screen = sct.grab(primary_monitor)
-                elif platform.system() == 'Darwin':  # macOS
-                    # On macOS, monitor 0 is the primary display
-                    screen = sct.grab(sct.monitors[0])
-                    
-                    # Store if this is a Retina display for later use
-                    global is_retina_display
-                    is_retina_display = False
-                    if hasattr(screen, 'width') and screen.width > 0:
-                        screen_width = pyautogui.size()[0]
-                        if screen.width > screen_width * 1.5:  # Likely a Retina display
-                            is_retina_display = True
-                else:
-                    # Other platforms
-                    screen = sct.grab(sct.monitors[0])
+                # Get the primary monitor using the helper function
+                primary_monitor = get_primary_monitor(sct)
+                screen = sct.grab(primary_monitor)
+                
+                # Store if this is a Retina display for later use (macOS only)
+                global is_retina_display
+                is_retina_display = False
+                if platform.system() == 'Darwin' and hasattr(screen, 'width') and screen.width > 0:
+                    screen_width = pyautogui.size()[0]
+                    if screen.width > screen_width * 1.5:  # Likely a Retina display
+                        is_retina_display = True
                 
             img = np.array(screen)
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
@@ -162,23 +211,25 @@ def aim_at_target(target_pos):
                 import ctypes
                 ctypes.windll.user32.SetCursorPos(int(x), int(y))
             except Exception:
-                # Fall back to pyautogui if Win32 API fails
+                # Fall back to pyautogui if Win32 A                # Fall back to pyautogui if Win32 A                # Fall back to pyautogui if Win32 API fails
                 pyautogui.moveTo(x, y, duration=0.01)
         elif platform.system() == 'Darwin':  # macOS
             try:
                 # For macOS, use Quartz for more accurate positioning
-                from Quartz import CGDisplayBounds
-                from Quartz import CGMainDisplayID
-                from Quartz import CGPostMouseEvent
+                from Quartz import CGDisplayBounds, CGMainDisplayID, CGPostMouseEvent, CGDisplayPixelsHigh
+                
+                # Get the main display
+                main_display = CGMainDisplayID()
+                main_height = CGDisplayPixelsHigh(main_display)
                 
                 # Convert to Quartz coordinate system (origin at bottom left)
-                main_monitor = CGDisplayBounds(CGMainDisplayID())
-                quartz_y = main_monitor.size.height - y
+                quartz_y = main_height - y
                 
                 # Use Quartz for mouse movement
                 CGPostMouseEvent((x, quartz_y), True, 1, False)
-            except Exception:
+            except Exception as e:
                 # Fall back to pyautogui if Quartz fails
+                print(f"Quartz mouse movement failed: {e}, falling back to pyautogui")
                 pyautogui.moveTo(x, y, duration=0.005)
         else:
             # Use default duration for Linux
@@ -324,12 +375,11 @@ def aimbot():
                 
                 # Apply Retina display scaling for region if needed
                 if platform.system() == 'Darwin' and is_retina_display:
-                    # For Retina displays, we need to multiply region by 2
-                    # But only if we're not already using screen coordinates
-                    if not last_region:
-                        padding *= 2
-                        w *= 2
-                        h *= 2
+                    # For Retina displays, apply consistent scaling
+                    scale_factor = 2 if not last_region else 1
+                    padding *= scale_factor
+                    w *= scale_factor
+                    h *= scale_factor
                 
                 # Create region with padding
                 last_region = (
@@ -366,6 +416,21 @@ def aimbot():
 if __name__ == "__main__":
     try:
         print(f"Starting aimbot on {platform.system()}...")
+        
+        # Check dependencies first
+        check_dependencies()
+        
+        # Platform-specific setup
+        if platform.system() == 'Darwin':
+            print("macOS detected. Make sure to grant accessibility permissions.")
+            print("System Preferences > Security & Privacy > Privacy > Accessibility")
+        elif platform.system() == 'Windows':
+            print("Windows detected. For best results, run as administrator.")
+        elif platform.system() == 'Linux':
+            if not os.environ.get('DISPLAY'):
+                print("Error: No X11 display detected. This application requires X11.")
+                sys.exit(1)
+            print("Linux detected. Make sure you're running under X11.")
         
         # Start keyboard listener before main function
         if not keyboard_listener.is_alive():
