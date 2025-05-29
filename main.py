@@ -4,7 +4,10 @@ import numpy as np
 import cv2
 import time
 import sys
-import select
+import platform
+import os
+import threading
+from pynput import keyboard
 
 # Configuration
 TARGET_COLORS = [
@@ -91,11 +94,48 @@ def aim_at_target(target_pos):
     pyautogui.moveTo(x, y, duration=0.01)
     return True
 
-# Check if key is pressed (non-blocking)
+# Global variables for key states
+key_states = {
+    SCAN_KEY: False,
+    AIM_KEY: False,
+    EXIT_KEY: False
+}
+key_lock = threading.Lock()
+
+# Keyboard listener setup
+def on_press(key):
+    try:
+        k = key.char.lower()
+        with key_lock:
+            if k in key_states:
+                key_states[k] = True
+    except AttributeError:
+        pass
+
+def on_release(key):
+    try:
+        k = key.char.lower()
+        with key_lock:
+            if k in key_states:
+                key_states[k] = False
+    except AttributeError:
+        pass
+
+# Start keyboard listener
+keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+keyboard_listener.start()
+
+# Check if key is pressed
 def key_pressed():
-    if select.select([sys.stdin], [], [], 0)[0]:
-        key = sys.stdin.read(1)
-        return key
+    with key_lock:
+        if key_states[SCAN_KEY]:
+            key_states[SCAN_KEY] = False  # Reset after reading
+            return SCAN_KEY
+        elif key_states[AIM_KEY]:
+            key_states[AIM_KEY] = False  # Reset after reading
+            return AIM_KEY
+        elif key_states[EXIT_KEY]:
+            return EXIT_KEY
     return None
 
 # Main aimbot function
@@ -104,7 +144,6 @@ def aimbot():
     print(f"Press '{SCAN_KEY}' to toggle continuous scanning on/off")
     print(f"Press '{AIM_KEY}' to aim at the last found target")
     print(f"Press '{EXIT_KEY}' to exit")
-    print("(Press Enter after each key)")
     
     last_region = None
     current_target = None
@@ -182,23 +221,13 @@ def aimbot():
     print("Aimbot stopped")
 
 if __name__ == "__main__":
-    # Set stdin to non-blocking mode
-    import os
-    import termios
-    import fcntl
-    
-    fd = sys.stdin.fileno()
-    oldterm = termios.tcgetattr(fd)
-    newattr = termios.tcgetattr(fd)
-    newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
-    termios.tcsetattr(fd, termios.TCSANOW, newattr)
-    
-    oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
-    
+    print(f"Running on {platform.system()}")
     try:
         aimbot()
+    except KeyboardInterrupt:
+        print("Program terminated by user")
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
-        # Reset terminal settings
-        termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
-        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+        # Stop keyboard listener
+        keyboard_listener.stop()
