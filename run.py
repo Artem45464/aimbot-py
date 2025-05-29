@@ -11,6 +11,43 @@ def main():
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
+    # Windows-specific checks
+    if platform.system() == "Windows":
+        # Check for admin rights
+        try:
+            import ctypes
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            if not is_admin:
+                print("Warning: Not running as administrator.")
+                print("Some features may not work correctly.")
+                print("Consider right-clicking and selecting 'Run as administrator'")
+        except:
+            pass
+    
+    # macOS-specific checks
+    elif platform.system() == "Darwin":
+        # Check for accessibility permissions
+        try:
+            import pyautogui
+            # Just trying to use pyautogui will trigger permission dialogs if needed
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"Warning: {e}")
+            print("You may need to grant accessibility permissions.")
+            print("Go to System Preferences > Security & Privacy > Privacy > Accessibility")
+            print("and add Terminal (or your IDE) to the list of allowed apps.")
+            input("Press Enter to continue after granting permissions...")
+    
+    # Linux-specific checks
+    elif platform.system() == "Linux":
+        # Check for X11 display server
+        if not os.environ.get('DISPLAY'):
+            print("Error: No display server detected. This application requires X11.")
+            print("If you're using Wayland, please run with XWayland.")
+            input("Press Enter to exit...")
+            sys.exit(1)
+    
     # Path to the virtual environment Python interpreter
     if platform.system() == "Windows":
         venv_python = os.path.join(script_dir, ".venv", "Scripts", "python.exe")
@@ -47,6 +84,31 @@ def setup_environment(script_dir):
             pip = os.path.join(script_dir, ".venv", "bin", "pip")
             
         subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")])
+        
+        # Windows-specific packages
+        if platform.system() == "Windows":
+            try:
+                subprocess.run([pip, "install", "pywin32"])
+                print("Installed Windows-specific packages")
+            except Exception as e:
+                print(f"Warning: Could not install Windows-specific packages: {e}")
+        
+        # macOS-specific packages
+        elif platform.system() == "Darwin":
+            try:
+                subprocess.run([pip, "install", "pyobjc-core pyobjc"])
+                print("Installed macOS-specific packages")
+            except Exception as e:
+                print(f"Warning: Could not install macOS-specific packages: {e}")
+                
+        # Linux-specific packages
+        elif platform.system() == "Linux":
+            try:
+                subprocess.run([pip, "install", "python-xlib"])
+                print("Installed Linux-specific packages")
+            except Exception as e:
+                print(f"Warning: Could not install Linux-specific packages: {e}")
+                
         print("Setup complete!")
     except Exception as e:
         print(f"Error setting up environment: {e}")
