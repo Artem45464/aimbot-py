@@ -1,0 +1,9 @@
+pyautogui
+mss
+numpy
+opencv-python
+pynput
+python-xlib; platform_system=="Linux"
+pywin32; platform_system=="Windows"
+pyobjc-core; platform_system=="Darwin"
+pyobjc-framework-Quartz; platform_system=="Darwin"
