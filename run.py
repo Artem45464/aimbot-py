@@ -96,7 +96,7 @@ def setup_environment(script_dir):
         # macOS-specific packages
         elif platform.system() == "Darwin":
             try:
-                subprocess.run([pip, "install", "pyobjc-core pyobjc"])
+                subprocess.run([pip, "install", "pyobjc-core", "pyobjc"])
                 print("Installed macOS-specific packages")
             except Exception as e:
                 print(f"Warning: Could not install macOS-specific packages: {e}")
