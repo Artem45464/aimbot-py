@@ -3,7 +3,7 @@ echo Starting aimbot...
 
 REM Check for admin rights
 net session >nul 2>&1
-if %errorLevel% == 0 (
+if %ERRORLEVEL% == 0 (
     echo Running with administrator privileges.
 ) else (
     echo Warning: Not running as administrator.
