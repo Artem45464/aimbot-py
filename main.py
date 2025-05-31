@@ -8,16 +8,69 @@ import platform
 import os
 import threading
 import math
+import ctypes  # Import ctypes at the top level for Windows
+
+# Import macOS-specific modules at the top level if on macOS
+if platform.system() == 'Darwin':
+    try:
+        from Quartz import CGDisplayBounds, CGMainDisplayID, CGPostMouseEvent, CGDisplayPixelsHigh
+    except ImportError:
+        print("Warning: Quartz framework not found. Mouse movement on macOS may not work correctly.")
+
 from pynput import keyboard
 
 # Configuration
 TARGET_COLORS = [
-    (255, 0, 0),    # Red
+    # Red colors
+    (255, 0, 0),    # Pure red
     (240, 10, 10),  # Slightly different red
-    (220, 0, 0)     # Darker red
+    (220, 0, 0),    # Darker red
+    (255, 50, 50),  # Light red
+    (200, 0, 0),    # Very dark red
+    (255, 100, 100), # Pink-red
+    
+    # Green colors
+    (0, 255, 0),    # Pure green
+    (0, 220, 0),    # Darker green
+    (50, 255, 50),  # Light green
+    (0, 200, 0),    # Very dark green
+    (100, 255, 100), # Light green
+    
+    # Blue colors
+    (0, 0, 255),    # Pure blue
+    (0, 0, 220),    # Darker blue
+    (50, 50, 255),  # Light blue
+    (0, 0, 200),    # Very dark blue
+    (100, 100, 255), # Light blue
+    
+    # Yellow colors
+    (255, 255, 0),  # Pure yellow
+    (220, 220, 0),  # Darker yellow
+    (255, 255, 50), # Light yellow
+    
+    # Purple/Magenta colors
+    (255, 0, 255),  # Pure magenta
+    (220, 0, 220),  # Darker magenta
+    (255, 50, 255), # Light magenta
+    (180, 0, 180),  # Dark purple
+    
+    # Cyan colors
+    (0, 255, 255),  # Pure cyan
+    (0, 220, 220),  # Darker cyan
+    (50, 255, 255), # Light cyan
+    
+    # Orange colors
+    (255, 165, 0),  # Pure orange
+    (255, 140, 0),  # Dark orange
+    (255, 190, 0),  # Light orange
+    
+    # White/Gray colors (for white targets)
+    (255, 255, 255), # Pure white
+    (220, 220, 220), # Light gray
+    (200, 200, 200)  # Medium gray
 ]
-COLOR_TOLERANCE = 75
-MIN_CONTOUR_AREA = 20
+COLOR_TOLERANCE = 60  # Adjusted for multi-color detection
+MIN_CONTOUR_AREA = 15 # Reduced to detect smaller targets
 SCAN_KEY = 'y'      # Key to toggle scanning on/off
 AIM_KEY = 'f'       # Key to aim at the last found target (changed from 'a' to avoid WASD conflicts)
 EXIT_KEY = 'q'      # Key to exit
@@ -60,7 +113,6 @@ def get_primary_monitor(sct):
         if platform.system() == 'Windows':
             # On Windows, try to use Win32 API to find primary
             try:
-                import ctypes
                 primary_index = 0
                 for i, monitor in enumerate(sct.monitors[1:], 1):
                     if monitor.get("left") == 0 and monitor.get("top") == 0:
@@ -130,6 +182,15 @@ def find_target(img):
         screen_width, screen_height = pyautogui.size()
         img_height, img_width, _ = img.shape
         
+        # Enhanced preprocessing for better detection
+        # Apply contrast enhancement
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        enhanced_lab = cv2.merge((cl, a, b))
+        img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        
         # Create mask from multiple color ranges
         combined_mask = np.zeros(img.shape[:2], dtype=np.uint8)
         
@@ -139,9 +200,10 @@ def find_target(img):
             color_mask = cv2.inRange(img, lower, upper)
             combined_mask = cv2.bitwise_or(combined_mask, color_mask)
         
-        # Process mask
+        # Advanced mask processing
         mask = cv2.erode(combined_mask, None, iterations=1)
         mask = cv2.dilate(mask, None, iterations=4)
+        mask = cv2.GaussianBlur(mask, (5, 5), 0)
     except Exception as e:
         print(f"Error in image processing: {e}")
         return None
@@ -167,9 +229,9 @@ def find_target(img):
     # Get bounding rectangle for headshot targeting
     x, y, w, h = cv2.boundingRect(largest)
     
-    # Target the top 20% of the contour (headshot)
+    # Target the center of the top 10% of the contour (more precise headshot)
     target_x = M["m10"] / M["m00"]
-    target_y = y + h * 0.2  # Target upper portion
+    target_y = y + h * 0.1  # Target upper portion for better precision
     
     # Convert to screen coordinates
     target_x = target_x * screen_width / img_width
@@ -200,7 +262,12 @@ def aim_at_target(target_pos):
         if math.isnan(x) or math.isnan(y) or math.isinf(x) or math.isinf(y):
             print("Invalid target coordinates (NaN or Inf)")
             return False
-            
+        
+        # Round to integers for more precise positioning
+        x = round(x)
+        y = round(y)
+        
+        # Ensure coordinates are within screen bounds
         x = max(0, min(x, screen_width))
         y = max(0, min(y, screen_height))
         
@@ -208,32 +275,38 @@ def aim_at_target(target_pos):
         if platform.system() == 'Windows':
             try:
                 # Use direct Win32 API for more accurate mouse movement on Windows
-                import ctypes
+                # No need to import ctypes here since it's imported at the top level
+                # Use SetCursorPos for immediate positioning
+                ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                
+                # Double-check position with a second call for accuracy
+                time.sleep(0.01)
                 ctypes.windll.user32.SetCursorPos(int(x), int(y))
             except Exception:
-                # Fall back to pyautogui if Win32 A                # Fall back to pyautogui if Win32 A                # Fall back to pyautogui if Win32 API fails
-                pyautogui.moveTo(x, y, duration=0.01)
+                # Fall back to pyautogui if Win32 API fails
+                # Use zero duration for immediate movement
+                pyautogui.moveTo(x, y, duration=0)
         elif platform.system() == 'Darwin':  # macOS
             try:
                 # For macOS, use Quartz for more accurate positioning
-                from Quartz import CGDisplayBounds, CGMainDisplayID, CGPostMouseEvent, CGDisplayPixelsHigh
-                
-                # Get the main display
+                # No need to import here since we imported at the top level
                 main_display = CGMainDisplayID()
                 main_height = CGDisplayPixelsHigh(main_display)
                 
                 # Convert to Quartz coordinate system (origin at bottom left)
                 quartz_y = main_height - y
                 
-                # Use Quartz for mouse movement
+                # Use Quartz for mouse movement - double call for accuracy
+                CGPostMouseEvent((x, quartz_y), True, 1, False)
+                time.sleep(0.01)
                 CGPostMouseEvent((x, quartz_y), True, 1, False)
             except Exception as e:
                 # Fall back to pyautogui if Quartz fails
                 print(f"Quartz mouse movement failed: {e}, falling back to pyautogui")
-                pyautogui.moveTo(x, y, duration=0.005)
+                pyautogui.moveTo(x, y, duration=0)
         else:
-            # Use default duration for Linux
-            pyautogui.moveTo(x, y, duration=0.01)
+            # Use zero duration for Linux for immediate movement
+            pyautogui.moveTo(x, y, duration=0)
         return True
     except Exception as e:
         print(f"Aiming error: {e}")
@@ -243,21 +316,12 @@ def aim_at_target(target_pos):
 key_states = {
     SCAN_KEY: False,
     AIM_KEY: False,
-    EXIT_KEY: False,
-    # Add WASD keys to prevent them from interfering
-    'w': False,
-    'a': False,
-    's': False,
-    'd': False
+    EXIT_KEY: False
 }
 last_key_time = {
     SCAN_KEY: 0,
     AIM_KEY: 0,
-    EXIT_KEY: 0,
-    'w': 0,
-    'a': 0,
-    's': 0,
-    'd': 0
+    EXIT_KEY: 0
 }
 # Track which keys should actually trigger actions
 action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY]
@@ -282,10 +346,8 @@ def on_press(key):
                     elif current_time - last_key_time[k] > 0.3 or k == EXIT_KEY:
                         key_states[k] = True
                         last_key_time[k] = current_time
-                else:
-                    # For non-action keys like WASD, just track their state but don't trigger actions
-                    key_states[k] = True
-                    last_key_time[k] = current_time
+                # For WASD keys, we don't need to do anything - just ignore them
+                # This prevents them from triggering any actions
     except (AttributeError, TypeError):
         # Handle both AttributeError (no char attribute) and TypeError (can't convert to lower)
         pass
@@ -389,27 +451,39 @@ def aimbot():
                     h + padding * 2
                 )
                 
-                # Auto-aim at target when found
+                # Enhanced aiming with multiple attempts for accuracy
+                # First aim attempt
+                aim_at_target(current_target)
+                
+                # Small pause to let the system process the movement
+                time.sleep(0.05)
+                
+                # Second aim attempt for better accuracy
                 aim_at_target(current_target)
                 print("Aimed at target")
                 
                 # Brief pause after finding a target
-                time.sleep(0.2)
+                time.sleep(0.05)  # Reduced delay for faster response
             else:
                 # Only print "scanning" message occasionally to avoid spam
                 if scan_count % 20 == 0:
                     print("Scanning...")
                     scan_count = 0
+                    
+                # If we've lost the target for too long, reset region to scan full screen
+                if last_region and scan_count > 30:
+                    last_region = None
+                    print("Target lost, scanning full screen")
         
         # Aim at target when aim key is pressed
         if key == AIM_KEY and current_target:
             print(f"Aiming at target ({int(current_target[0])}, {int(current_target[1])})")
             aim_at_target(current_target)
             # Add a small delay to prevent multiple rapid movements
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced for faster response
         
         # Small delay to prevent excessive CPU usage
-        time.sleep(0.05)
+        time.sleep(0.01)  # Reduced for more frequent scanning
             
     print("Aimbot stopped")
 
