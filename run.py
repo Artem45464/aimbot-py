@@ -83,29 +83,44 @@ def setup_environment(script_dir):
         else:  # macOS or Linux
             pip = os.path.join(script_dir, ".venv", "bin", "pip")
             
-        subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")])
+        try:
+            result = subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")], check=True)
+            if result.returncode != 0:
+                print("Warning: Some dependencies may not have installed correctly")
+        except Exception as e:
+            print(f"Error installing dependencies: {e}")
+            print("Continuing anyway, but some features may not work correctly.")
         
         # Windows-specific packages
         if platform.system() == "Windows":
             try:
-                subprocess.run([pip, "install", "pywin32"])
-                print("Installed Windows-specific packages")
+                result = subprocess.run([pip, "install", "pywin32"], check=True)
+                if result.returncode == 0:
+                    print("Installed Windows-specific packages")
+                else:
+                    print("Warning: Could not install Windows-specific packages")
             except Exception as e:
                 print(f"Warning: Could not install Windows-specific packages: {e}")
         
         # macOS-specific packages
         elif platform.system() == "Darwin":
             try:
-                subprocess.run([pip, "install", "pyobjc-core", "pyobjc"])
-                print("Installed macOS-specific packages")
+                result = subprocess.run([pip, "install", "pyobjc-core", "pyobjc-framework-Quartz"], check=True)
+                if result.returncode == 0:
+                    print("Installed macOS-specific packages")
+                else:
+                    print("Warning: Could not install macOS-specific packages")
             except Exception as e:
                 print(f"Warning: Could not install macOS-specific packages: {e}")
                 
         # Linux-specific packages
         elif platform.system() == "Linux":
             try:
-                subprocess.run([pip, "install", "python-xlib"])
-                print("Installed Linux-specific packages")
+                result = subprocess.run([pip, "install", "python-xlib"], check=True)
+                if result.returncode == 0:
+                    print("Installed Linux-specific packages")
+                else:
+                    print("Warning: Could not install Linux-specific packages")
             except Exception as e:
                 print(f"Warning: Could not install Linux-specific packages: {e}")
                 
