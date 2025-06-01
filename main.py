@@ -143,9 +143,15 @@ def capture_screen(region=None):
                 # Ensure region values are valid
                 region = [max(0, region[0]), max(0, region[1]), 
                          max(1, region[2]), max(1, region[3])]
-                monitor = {"top": region[1], "left": region[0], 
-                          "width": region[2], "height": region[3]}
-                screen = sct.grab(monitor)
+                # Ensure width and height are positive integers
+                if region[2] <= 0 or region[3] <= 0:
+                    # Invalid region, fall back to full screen
+                    primary_monitor = get_primary_monitor(sct)
+                    screen = sct.grab(primary_monitor)
+                else:
+                    monitor = {"top": region[1], "left": region[0], 
+                              "width": region[2], "height": region[3]}
+                    screen = sct.grab(monitor)
             else:
                 # Get the primary monitor using the helper function
                 primary_monitor = get_primary_monitor(sct)
@@ -204,46 +210,46 @@ def find_target(img):
         mask = cv2.erode(combined_mask, None, iterations=1)
         mask = cv2.dilate(mask, None, iterations=4)
         mask = cv2.GaussianBlur(mask, (5, 5), 0)
+        
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return None
+            
+        # Filter and find largest contour
+        valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > MIN_CONTOUR_AREA]
+        if not valid_contours:
+            return None
+            
+        largest = max(valid_contours, key=cv2.contourArea)
+        
+        # Get target position
+        M = cv2.moments(largest)
+        if M["m00"] == 0:
+            return None
+            
+        # Get bounding rectangle for headshot targeting
+        x, y, w, h = cv2.boundingRect(largest)
+        
+        # Target the center of the top 10% of the contour (more precise headshot)
+        target_x = M["m10"] / M["m00"]  # Center X position
+        target_y = y + h * 0.10  # Target upper portion for better precision (headshot)
+        
+        # Convert to screen coordinates
+        target_x = target_x * screen_width / img_width
+        target_y = target_y * screen_height / img_height
+        
+        # Apply Retina display scaling correction if needed
+        if platform.system() == 'Darwin' and is_retina_display:
+            # On Retina displays, we need to divide by 2 to get the correct screen position
+            target_x /= 2
+            target_y /= 2
+        
+        return target_x, target_y, (x, y, w, h)  # Return target coords and bounding box
     except Exception as e:
-        print(f"Error in image processing: {e}")
+        print(f"Error in target detection: {e}")
         return None
-
-    # Find contours
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if not contours:
-        return None
-        
-    # Filter and find largest contour
-    valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > MIN_CONTOUR_AREA]
-    if not valid_contours:
-        return None
-        
-    largest = max(valid_contours, key=cv2.contourArea)
-    
-    # Get target position
-    M = cv2.moments(largest)
-    if M["m00"] == 0:
-        return None
-        
-    # Get bounding rectangle for headshot targeting
-    x, y, w, h = cv2.boundingRect(largest)
-    
-    # Target the center of the top 10% of the contour (more precise headshot)
-    target_x = M["m10"] / M["m00"]
-    target_y = y + h * 0.1  # Target upper portion for better precision
-    
-    # Convert to screen coordinates
-    target_x = target_x * screen_width / img_width
-    target_y = target_y * screen_height / img_height
-    
-    # Apply Retina display scaling correction if needed
-    if platform.system() == 'Darwin' and is_retina_display:
-        # On Retina displays, we need to divide by 2 to get the correct screen position
-        target_x /= 2
-        target_y /= 2
-    
-    return target_x, target_y, (x, y, w, h)  # Return target coords and bounding box
 
 # Move mouse to target (no click)
 def aim_at_target(target_pos):
@@ -263,13 +269,14 @@ def aim_at_target(target_pos):
             print("Invalid target coordinates (NaN or Inf)")
             return False
         
-        # Round to integers for more precise positioning
-        x = round(x)
-        y = round(y)
+        # Use exact floating point values for more precise positioning
+        # This avoids rounding errors that can reduce accuracy
+        x = float(x)
+        y = float(y)
         
         # Ensure coordinates are within screen bounds
-        x = max(0, min(x, screen_width))
-        y = max(0, min(y, screen_height))
+        x = max(0, min(x, screen_width - 1))
+        y = max(0, min(y, screen_height - 1))
         
         # Platform-specific mouse movement
         if platform.system() == 'Windows':
@@ -277,11 +284,12 @@ def aim_at_target(target_pos):
                 # Use direct Win32 API for more accurate mouse movement on Windows
                 # No need to import ctypes here since it's imported at the top level
                 # Use SetCursorPos for immediate positioning
-                ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                x_int, y_int = int(round(x)), int(round(y))
+                ctypes.windll.user32.SetCursorPos(x_int, y_int)
                 
                 # Double-check position with a second call for accuracy
                 time.sleep(0.01)
-                ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                ctypes.windll.user32.SetCursorPos(x_int, y_int)
             except Exception:
                 # Fall back to pyautogui if Win32 API fails
                 # Use zero duration for immediate movement
@@ -297,16 +305,25 @@ def aim_at_target(target_pos):
                 quartz_y = main_height - y
                 
                 # Use Quartz for mouse movement - double call for accuracy
-                CGPostMouseEvent((x, quartz_y), True, 1, False)
+                # Store coordinates to ensure consistency between calls
+                quartz_x = float(x)
+                quartz_y = float(quartz_y)
+                CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
                 time.sleep(0.01)
-                CGPostMouseEvent((x, quartz_y), True, 1, False)
+                CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
             except Exception as e:
                 # Fall back to pyautogui if Quartz fails
                 print(f"Quartz mouse movement failed: {e}, falling back to pyautogui")
                 pyautogui.moveTo(x, y, duration=0)
         else:
             # Use zero duration for Linux for immediate movement
-            pyautogui.moveTo(x, y, duration=0)
+            try:
+                # For Linux, ensure we're using integers for better compatibility
+                pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)
+            except Exception as e:
+                print(f"Linux mouse movement error: {e}")
+                # Fallback to float coordinates if integer conversion fails
+                pyautogui.moveTo(x, y, duration=0)
         return True
     except Exception as e:
         print(f"Aiming error: {e}")
@@ -330,7 +347,10 @@ key_lock = threading.Lock()
 # Keyboard listener setup
 def on_press(key):
     try:
-        k = key.char.lower()
+        k = key.char.lower() if hasattr(key, 'char') else None
+        if k is None:
+            return
+            
         current_time = time.time()
         with key_lock:
             if k in key_states:
@@ -348,18 +368,21 @@ def on_press(key):
                         last_key_time[k] = current_time
                 # For WASD keys, we don't need to do anything - just ignore them
                 # This prevents them from triggering any actions
-    except (AttributeError, TypeError):
-        # Handle both AttributeError (no char attribute) and TypeError (can't convert to lower)
+    except (TypeError):
+        # Handle TypeError (can't convert to lower)
         pass
 
 def on_release(key):
     try:
-        k = key.char.lower()
+        k = key.char.lower() if hasattr(key, 'char') else None
+        if k is None:
+            return
+            
         with key_lock:
             if k in key_states:
                 key_states[k] = False
-    except (AttributeError, TypeError):
-        # Handle both AttributeError (no char attribute) and TypeError (can't convert to lower)
+    except (TypeError):
+        # Handle TypeError (can't convert to lower)
         pass
 
 # Start keyboard listener
@@ -445,20 +468,24 @@ def aimbot():
                 
                 # Create region with padding
                 last_region = (
-                    max(0, x1 - padding),
-                    max(0, y1 - padding),
-                    w + padding * 2,
-                    h + padding * 2
+                    max(0, int(x1 - padding)),
+                    max(0, int(y1 - padding)),
+                    max(1, int(w + padding * 2)),
+                    max(1, int(h + padding * 2))
                 )
                 
                 # Enhanced aiming with multiple attempts for accuracy
-                # First aim attempt
+                # First aim attempt - move quickly to the target
                 aim_at_target(current_target)
                 
                 # Small pause to let the system process the movement
-                time.sleep(0.05)
+                time.sleep(0.02)  # Reduced delay for faster response
                 
-                # Second aim attempt for better accuracy
+                # Second aim attempt for micro-adjustment and better accuracy
+                aim_at_target(current_target)
+                
+                # Third aim attempt for perfect precision
+                time.sleep(0.01)
                 aim_at_target(current_target)
                 print("Aimed at target")
                 
@@ -516,6 +543,20 @@ if __name__ == "__main__":
         # Check if keyboard listener started successfully
         if not keyboard_listener.is_alive():
             print("Warning: Keyboard listener failed to start. Key detection may not work.")
+            # Try to start it one more time
+            try:
+                # Create a new listener instance
+                new_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+                new_listener.start()
+                time.sleep(0.5)
+                if not new_listener.is_alive():
+                    print("Error: Could not start keyboard listener. Key detection will not work.")
+                else:
+                    # Replace the old listener with the new one
+                    keyboard_listener.stop()
+                    keyboard_listener = new_listener
+            except Exception as e:
+                print(f"Error restarting keyboard listener: {e}")
         
         aimbot()
     except KeyboardInterrupt:
@@ -526,5 +567,8 @@ if __name__ == "__main__":
         traceback.print_exc()
     finally:
         # Stop keyboard listener if it's running
-        if keyboard_listener.is_alive():
-            keyboard_listener.stop()
+        try:
+            if keyboard_listener and keyboard_listener.is_alive():
+                keyboard_listener.stop()
+        except Exception as e:
+            print(f"Error stopping keyboard listener: {e}")
