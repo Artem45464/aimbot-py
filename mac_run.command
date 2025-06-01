@@ -6,6 +6,14 @@ chmod +x "$0"
 
 echo "Starting aimbot on macOS..."
 
+# Check Python version (must be 3.6 or higher)
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" || {
+    echo "Error: Python 3.6 or higher is required."
+    echo "Current Python version: $(python3 --version)"
+    read -p "Press Enter to exit..."
+    exit 1
+}
+
 # Check for macOS permissions
 if ! python3 -c "import pyautogui" &>/dev/null; then
     echo "Error: Accessibility permissions may not be granted."
@@ -58,7 +66,7 @@ if [ ! -f ".venv/bin/python" ]; then
     .venv/bin/pip install -r requirements.txt
     .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz
 fi
-.venv/bin/python run.py
+.venv/bin/python main.py
 
 # If we get here, the program has exited
 read -p "Press Enter to exit..."
