@@ -10,6 +10,8 @@ import subprocess
 def main():
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    if not script_dir:  # Handle case where __file__ might not be available
+        script_dir = os.getcwd()
     
     # Windows-specific checks
     if platform.system() == "Windows":
@@ -21,8 +23,8 @@ def main():
                 print("Warning: Not running as administrator.")
                 print("Some features may not work correctly.")
                 print("Consider right-clicking and selecting 'Run as administrator'")
-        except:
-            pass
+        except Exception as e:
+            print(f"Warning: Could not check admin status: {e}")
     
     # macOS-specific checks
     elif platform.system() == "Darwin":
@@ -64,6 +66,12 @@ def main():
         
     # Run the main script with the virtual environment Python
     try:
+        if not os.path.exists(venv_python):
+            print(f"Error: Python interpreter not found at {venv_python}")
+            sys.exit(1)
+        if not os.path.exists(main_script):
+            print(f"Error: Main script not found at {main_script}")
+            sys.exit(1)
         subprocess.run([venv_python, main_script])
     except Exception as e:
         print(f"Error running the script: {e}")
@@ -74,7 +82,10 @@ def setup_environment(script_dir):
     try:
         # Create virtual environment
         print("Creating virtual environment...")
-        subprocess.run([sys.executable, "-m", "venv", os.path.join(script_dir, ".venv")])
+        result = subprocess.run([sys.executable, "-m", "venv", os.path.join(script_dir, ".venv")])
+        if result.returncode != 0:
+            print("Error: Failed to create virtual environment")
+            sys.exit(1)
         
         # Install dependencies
         print("Installing dependencies...")
