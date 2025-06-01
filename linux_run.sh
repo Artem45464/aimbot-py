@@ -11,6 +11,14 @@ if [ -z "$DISPLAY" ]; then
     exit 1
 fi
 
+# Check Python version (must be 3.6 or higher)
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" || {
+    echo "Error: Python 3.6 or higher is required."
+    echo "Current Python version: $(python3 --version)"
+    read -p "Press Enter to exit..."
+    exit 1
+}
+
 # Create virtual environment if it doesn't exist
 if [ ! -d ".venv" ]; then
     echo "Setting up virtual environment..."
@@ -46,7 +54,7 @@ if [ ! -f ".venv/bin/python" ]; then
     .venv/bin/pip install -r requirements.txt
     .venv/bin/pip install python-xlib
 fi
-.venv/bin/python run.py
+.venv/bin/python main.py
 
 # If we get here, the program has exited
 read -p "Press Enter to exit..."
