@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Cross-platform launcher for the aimbot
+Alternative cross-platform launcher for the aimbot
+
+This script provides an alternative way to run the aimbot directly with Python:
+    python run.py
+
+The platform-specific launcher scripts (mac_run.command, linux_run.sh, windows_run.bat)
+are the recommended way to run the application.
 """
 import os
 import sys
@@ -8,6 +14,12 @@ import platform
 import subprocess
 
 def main():
+    # Check Python version
+    if sys.version_info < (3, 6):
+        print("Error: Python 3.6 or higher is required")
+        print(f"Current Python version: {platform.python_version()}")
+        sys.exit(1)
+        
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if not script_dir:  # Handle case where __file__ might not be available
@@ -59,20 +71,23 @@ def main():
     # Path to the main script
     main_script = os.path.join(script_dir, "main.py")
     
-    # Check if virtual environment exists
-    if not os.path.exists(venv_python):
-        print("Virtual environment not found. Setting up environment...")
+    # Check if virtual environment exists or is incomplete
+    if not os.path.exists(venv_python) or not os.path.exists(os.path.join(script_dir, ".venv", "pyvenv.cfg")):
+        print("Virtual environment not found or incomplete. Setting up environment...")
         setup_environment(script_dir)
+        
+    # Verify the environment was set up correctly
+    if not os.path.exists(venv_python):
+        print(f"Error: Python interpreter not found at {venv_python} after setup")
+        print("Virtual environment setup failed. Please check for errors above.")
+        sys.exit(1)
         
     # Run the main script with the virtual environment Python
     try:
-        if not os.path.exists(venv_python):
-            print(f"Error: Python interpreter not found at {venv_python}")
-            sys.exit(1)
         if not os.path.exists(main_script):
             print(f"Error: Main script not found at {main_script}")
             sys.exit(1)
-        subprocess.run([venv_python, main_script])
+        subprocess.run([venv_python, main_script], check=False)
     except Exception as e:
         print(f"Error running the script: {e}")
         sys.exit(1)
@@ -80,9 +95,21 @@ def main():
 def setup_environment(script_dir):
     """Set up the virtual environment and install dependencies"""
     try:
+        # Clean up any existing incomplete environment
+        venv_dir = os.path.join(script_dir, ".venv")
+        if os.path.exists(venv_dir) and not os.path.exists(os.path.join(venv_dir, "pyvenv.cfg")):
+            print("Removing incomplete virtual environment...")
+            try:
+                if platform.system() == "Windows":
+                    subprocess.run(["rmdir", "/s", "/q", venv_dir], check=False, shell=True)
+                else:
+                    subprocess.run(["rm", "-rf", venv_dir], check=False)
+            except Exception as e:
+                print(f"Warning: Could not remove existing environment: {e}")
+                
         # Create virtual environment
         print("Creating virtual environment...")
-        result = subprocess.run([sys.executable, "-m", "venv", os.path.join(script_dir, ".venv")])
+        result = subprocess.run([sys.executable, "-m", "venv", venv_dir], check=False)
         if result.returncode != 0:
             print("Error: Failed to create virtual environment")
             sys.exit(1)
@@ -95,7 +122,7 @@ def setup_environment(script_dir):
             pip = os.path.join(script_dir, ".venv", "bin", "pip")
             
         try:
-            result = subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")], check=True)
+            result = subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")], check=False)
             if result.returncode != 0:
                 print("Warning: Some dependencies may not have installed correctly")
         except Exception as e:
@@ -105,7 +132,7 @@ def setup_environment(script_dir):
         # Windows-specific packages
         if platform.system() == "Windows":
             try:
-                result = subprocess.run([pip, "install", "pywin32"], check=True)
+                result = subprocess.run([pip, "install", "pywin32"], check=False)
                 if result.returncode == 0:
                     print("Installed Windows-specific packages")
                 else:
@@ -116,7 +143,7 @@ def setup_environment(script_dir):
         # macOS-specific packages
         elif platform.system() == "Darwin":
             try:
-                result = subprocess.run([pip, "install", "pyobjc-core", "pyobjc-framework-Quartz"], check=True)
+                result = subprocess.run([pip, "install", "pyobjc-core", "pyobjc-framework-Quartz"], check=False)
                 if result.returncode == 0:
                     print("Installed macOS-specific packages")
                 else:
@@ -127,7 +154,7 @@ def setup_environment(script_dir):
         # Linux-specific packages
         elif platform.system() == "Linux":
             try:
-                result = subprocess.run([pip, "install", "python-xlib"], check=True)
+                result = subprocess.run([pip, "install", "python-xlib"], check=False)
                 if result.returncode == 0:
                     print("Installed Linux-specific packages")
                 else:
@@ -141,4 +168,8 @@ def setup_environment(script_dir):
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProcess interrupted by user. Exiting...")
+        sys.exit(1)
