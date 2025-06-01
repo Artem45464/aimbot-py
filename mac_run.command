@@ -42,7 +42,7 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Check for Quartz framework
-if ! .venv/bin/python -c "from Quartz import CGDisplayBounds" &>/dev/null; then
+if ! .venv/bin/python -c "from Quartz import CGPostMouseEvent" &>/dev/null; then
     echo "Warning: Quartz framework not found. Mouse movement may not work correctly."
     echo "Trying to install required packages..."
     .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz
@@ -50,6 +50,14 @@ fi
 
 # Run the application using the virtual environment
 echo "Starting aimbot..."
+# Check if Python exists in the virtual environment
+if [ ! -f ".venv/bin/python" ]; then
+    echo "Python interpreter not found in virtual environment. Recreating environment..."
+    rm -rf .venv
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz
+fi
 .venv/bin/python run.py
 
 # If we get here, the program has exited
