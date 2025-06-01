@@ -15,6 +15,7 @@ if %ERRORLEVEL% == 0 (
 REM Try to find Python in common locations
 where python >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
+    set PYTHON=python
     goto :setup_env
 ) else (
     where python3 >nul 2>nul
@@ -30,7 +31,6 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 :setup_env
-set PYTHON=python
 echo Checking for virtual environment...
 
 REM Create virtual environment if it doesn't exist
@@ -60,6 +60,14 @@ if not exist .venv\ (
 
 REM Run the application using the virtual environment
 echo Starting aimbot...
+REM Check if Python exists in the virtual environment
+if not exist .venv\Scripts\python.exe (
+    echo Python interpreter not found in virtual environment. Recreating environment...
+    rmdir /s /q .venv
+    %PYTHON% -m venv .venv
+    .venv\Scripts\pip install -r requirements.txt
+    .venv\Scripts\pip install pywin32
+)
 .venv\Scripts\python run.py
 
 REM If we get here, the program has exited
