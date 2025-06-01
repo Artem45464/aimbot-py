@@ -29,12 +29,23 @@ if [ ! -d ".venv" ]; then
     }
     
     # Install Linux-specific packages
-    .venv/bin/pip install python-xlib
+    .venv/bin/pip install python-xlib || {
+        echo "Warning: Failed to install Linux-specific packages."
+        echo "Some features may not work correctly."
+    }
     echo "Setup complete!"
 fi
 
 # Run the application using the virtual environment
 echo "Starting aimbot..."
+# Check if Python exists in the virtual environment
+if [ ! -f ".venv/bin/python" ]; then
+    echo "Python interpreter not found in virtual environment. Recreating environment..."
+    rm -rf .venv
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/pip install python-xlib
+fi
 .venv/bin/python run.py
 
 # If we get here, the program has exited
