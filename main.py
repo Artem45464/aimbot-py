@@ -245,19 +245,15 @@ def find_target(img):
             # On Retina displays, we need to divide by 2 to get the correct screen position
             target_x /= 2
             target_y /= 2
-        
-        return target_x, target_y, (x, y, w, h)  # Return target coords and bounding box
+            
+        return (target_x, target_y, (x, y, w, h))
     except Exception as e:
-        print(f"Error in target detection: {e}")
+        print(f"Target detection error: {e}")
         return None
 
-# Move mouse to target (no click)
-def aim_at_target(target_pos):
-    if not target_pos:
-        return False
-    
+# Aim at target with platform-specific optimizations
+def aim_at_target(x, y):
     try:
-        x, y = float(target_pos[0]), float(target_pos[1])
         screen_width, screen_height = pyautogui.size()
         
         # Ensure coordinates are within screen bounds and are valid numbers
@@ -347,7 +343,7 @@ key_lock = threading.Lock()
 # Keyboard listener setup
 def on_press(key):
     try:
-        k = key.char.lower() if hasattr(key, 'char') else None
+        k = key.char.lower() if hasattr(key, 'char') and key.char is not None else None
         if k is None:
             return
             
@@ -368,21 +364,21 @@ def on_press(key):
                         last_key_time[k] = current_time
                 # For WASD keys, we don't need to do anything - just ignore them
                 # This prevents them from triggering any actions
-    except (TypeError):
-        # Handle TypeError (can't convert to lower)
+    except (TypeError, AttributeError):
+        # Handle TypeError (can't convert to lower) or AttributeError (NoneType has no attribute 'lower')
         pass
 
 def on_release(key):
     try:
-        k = key.char.lower() if hasattr(key, 'char') else None
+        k = key.char.lower() if hasattr(key, 'char') and key.char is not None else None
         if k is None:
             return
             
         with key_lock:
             if k in key_states:
                 key_states[k] = False
-    except (TypeError):
-        # Handle TypeError (can't convert to lower)
+    except (TypeError, AttributeError):
+        # Handle TypeError (can't convert to lower) or AttributeError (NoneType has no attribute 'lower')
         pass
 
 # Start keyboard listener
@@ -474,101 +470,53 @@ def aimbot():
                     max(1, int(h + padding * 2))
                 )
                 
-                # Enhanced aiming with multiple attempts for accuracy
-                # First aim attempt - move quickly to the target
-                aim_at_target(current_target)
+                # Don't automatically aim at targets when found
+                # Only store the target position for manual aiming with AIM_KEY
+                print("Target acquired. Press 'f' to aim.")
                 
-                # Small pause to let the system process the movement
+                # Small pause for system stability
                 time.sleep(0.02)  # Reduced delay for faster response
-                
-                # Second aim attempt for micro-adjustment and better accuracy
-                aim_at_target(current_target)
-                
-                # Third aim attempt for perfect precision
-                time.sleep(0.01)
-                aim_at_target(current_target)
-                print("Aimed at target")
-                
-                # Brief pause after finding a target
-                time.sleep(0.05)  # Reduced delay for faster response
             else:
-                # Only print "scanning" message occasionally to avoid spam
-                if scan_count % 20 == 0:
-                    print("Scanning...")
-                    scan_count = 0
-                    
-                # If we've lost the target for too long, reset region to scan full screen
-                if last_region and scan_count > 30:
-                    last_region = None
-                    print("Target lost, scanning full screen")
+                # If no target found in region, try full screen next time
+                last_region = None
+                current_target = None
+                
+                # Small pause to prevent CPU overload
+                time.sleep(0.05)
         
-        # Aim at target when aim key is pressed
+        # Aim at target if AIM_KEY is pressed and we have a target
         if key == AIM_KEY and current_target:
-            print(f"Aiming at target ({int(current_target[0])}, {int(current_target[1])})")
-            aim_at_target(current_target)
-            # Add a small delay to prevent multiple rapid movements
-            time.sleep(0.05)  # Reduced for faster response
+            x, y = current_target
+            print(f"Aiming at ({int(x)}, {int(y)})")
+            aim_at_target(x, y)
         
-        # Small delay to prevent excessive CPU usage
-        time.sleep(0.01)  # Reduced for more frequent scanning
-            
-    print("Aimbot stopped")
+        # Small pause for system stability
+        time.sleep(0.01)
 
-if __name__ == "__main__":
+# Main function
+def main():
+    # Check dependencies
+    if not check_dependencies():
+        print("Warning: Some dependencies are missing. The program may not work correctly.")
+        choice = input("Continue anyway? (y/n): ")
+        if choice.lower() != 'y':
+            sys.exit(1)
+    
+    # Start keyboard listener
+    keyboard_listener.start()
+    
     try:
-        print(f"Starting aimbot on {platform.system()}...")
-        
-        # Check dependencies first
-        check_dependencies()
-        
-        # Platform-specific setup
-        if platform.system() == 'Darwin':
-            print("macOS detected. Make sure to grant accessibility permissions.")
-            print("System Preferences > Security & Privacy > Privacy > Accessibility")
-        elif platform.system() == 'Windows':
-            print("Windows detected. For best results, run as administrator.")
-        elif platform.system() == 'Linux':
-            if not os.environ.get('DISPLAY'):
-                print("Error: No X11 display detected. This application requires X11.")
-                sys.exit(1)
-            print("Linux detected. Make sure you're running under X11.")
-        
-        # Start keyboard listener before main function
-        if not keyboard_listener.is_alive():
-            keyboard_listener.start()
-            
-        # Small delay to ensure keyboard listener is ready
-        time.sleep(0.5)
-        
-        # Check if keyboard listener started successfully
-        if not keyboard_listener.is_alive():
-            print("Warning: Keyboard listener failed to start. Key detection may not work.")
-            # Try to start it one more time
-            try:
-                # Create a new listener instance
-                new_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-                new_listener.start()
-                time.sleep(0.5)
-                if not new_listener.is_alive():
-                    print("Error: Could not start keyboard listener. Key detection will not work.")
-                else:
-                    # Replace the old listener with the new one
-                    keyboard_listener.stop()
-                    keyboard_listener = new_listener
-            except Exception as e:
-                print(f"Error restarting keyboard listener: {e}")
-        
+        # Run aimbot
         aimbot()
     except KeyboardInterrupt:
-        print("Program terminated by user")
+        print("Program interrupted by user.")
     except Exception as e:
         print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
     finally:
-        # Stop keyboard listener if it's running
-        try:
-            if keyboard_listener and keyboard_listener.is_alive():
-                keyboard_listener.stop()
-        except Exception as e:
-            print(f"Error stopping keyboard listener: {e}")
+        # Stop keyboard listener
+        keyboard_listener.stop()
+        keyboard_listener.join()
+        print("Program terminated.")
+
+if __name__ == "__main__":
+    main()
