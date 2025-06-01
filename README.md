@@ -67,7 +67,7 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 ## Features
 - Multi-color target detection (red, green, blue, yellow, purple, cyan, orange, white)
 - Enhanced image processing with contrast enhancement
-- Precise headshot targeting (aims at the top 15% of targets)
+- Precise headshot targeting (aims at the top 10% of targets)
 - Adaptive region-based scanning for better performance
 - Cross-platform support with optimized mouse movement for each OS
 - Automatic dependency installation and environment setup
