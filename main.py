@@ -18,62 +18,21 @@ if platform.system() == 'Darwin':
         print("Warning: Quartz framework not found. Mouse movement on macOS may not work correctly.")
 
 from pynput import keyboard
+import config  # Import the configuration module
 
-# Configuration
-TARGET_COLORS = [
-    # Red colors
-    (255, 0, 0),    # Pure red
-    (240, 10, 10),  # Slightly different red
-    (220, 0, 0),    # Darker red
-    (255, 50, 50),  # Light red
-    (200, 0, 0),    # Very dark red
-    (255, 100, 100), # Pink-red
-    
-    # Green colors
-    (0, 255, 0),    # Pure green
-    (0, 220, 0),    # Darker green
-    (50, 255, 50),  # Light green
-    (0, 200, 0),    # Very dark green
-    (100, 255, 100), # Light green
-    
-    # Blue colors
-    (0, 0, 255),    # Pure blue
-    (0, 0, 220),    # Darker blue
-    (50, 50, 255),  # Light blue
-    (0, 0, 200),    # Very dark blue
-    (100, 100, 255), # Light blue
-    
-    # Yellow colors
-    (255, 255, 0),  # Pure yellow
-    (220, 220, 0),  # Darker yellow
-    (255, 255, 50), # Light yellow
-    
-    # Purple/Magenta colors
-    (255, 0, 255),  # Pure magenta
-    (220, 0, 220),  # Darker magenta
-    (255, 50, 255), # Light magenta
-    (180, 0, 180),  # Dark purple
-    
-    # Cyan colors
-    (0, 255, 255),  # Pure cyan
-    (0, 220, 220),  # Darker cyan
-    (50, 255, 255), # Light cyan
-    
-    # Orange colors
-    (255, 165, 0),  # Pure orange
-    (255, 140, 0),  # Dark orange
-    (255, 190, 0),  # Light orange
-    
-    # White/Gray colors (for white targets)
-    (255, 255, 255), # Pure white
-    (220, 220, 220), # Light gray
-    (200, 200, 200)  # Medium gray
-]
-COLOR_TOLERANCE = 60  # Adjusted for multi-color detection
-MIN_CONTOUR_AREA = 15 # Reduced to detect smaller targets
-SCAN_KEY = 'y'      # Key to toggle scanning on/off
-AIM_KEY = 'f'       # Key to aim at the last found target (changed from 'a' to avoid WASD conflicts)
-EXIT_KEY = 'q'      # Key to exit
+# Load configuration
+CONFIG = config.load_config()
+
+# Configuration variables from config
+TARGET_COLORS = [tuple(color) for color in CONFIG['target_colors']]
+COLOR_TOLERANCE = CONFIG['color_tolerance']
+MIN_CONTOUR_AREA = CONFIG['min_contour_area']
+SCAN_KEY = CONFIG['scan_key']
+AIM_KEY = CONFIG['aim_key']
+EXIT_KEY = CONFIG['exit_key']
+SAVE_CONFIG_KEY = CONFIG['save_config_key']
+LOAD_CONFIG_KEY = CONFIG['load_config_key']
+HEADSHOT_PERCENTAGE = CONFIG['headshot_percentage']
 
 # Check for required dependencies
 def check_dependencies():
@@ -232,9 +191,9 @@ def find_target(img):
         # Get bounding rectangle for headshot targeting
         x, y, w, h = cv2.boundingRect(largest)
         
-        # Target the center of the top 10% of the contour (more precise headshot)
+        # Target the center of the top portion of the contour (more precise headshot)
         target_x = M["m10"] / M["m00"]  # Center X position
-        target_y = y + h * 0.10  # Target upper portion for better precision (headshot)
+        target_y = y + h * HEADSHOT_PERCENTAGE  # Target upper portion for better precision (headshot)
         
         # Convert to screen coordinates
         target_x = target_x * screen_width / img_width
@@ -245,6 +204,12 @@ def find_target(img):
             # On Retina displays, we need to divide by 2 to get the correct screen position
             target_x /= 2
             target_y /= 2
+            
+            # Also adjust the bounding box for consistent region tracking
+            x /= 2
+            y /= 2
+            w /= 2
+            h /= 2
             
         return (target_x, target_y, (x, y, w, h))
     except Exception as e:
@@ -278,48 +243,48 @@ def aim_at_target(x, y):
         if platform.system() == 'Windows':
             try:
                 # Use direct Win32 API for more accurate mouse movement on Windows
-                # No need to import ctypes here since it's imported at the top level
-                # Use SetCursorPos for immediate positioning
                 x_int, y_int = int(round(x)), int(round(y))
                 ctypes.windll.user32.SetCursorPos(x_int, y_int)
                 
+                # Add stabilization pause for first shot accuracy
+                time.sleep(0.05)
+                
                 # Double-check position with a second call for accuracy
-                time.sleep(0.01)
                 ctypes.windll.user32.SetCursorPos(x_int, y_int)
             except Exception:
                 # Fall back to pyautogui if Win32 API fails
-                # Use zero duration for immediate movement
                 pyautogui.moveTo(x, y, duration=0)
+                time.sleep(0.05)  # Stabilization pause
         elif platform.system() == 'Darwin':  # macOS
             try:
                 # For macOS, use Quartz for more accurate positioning
-                # No need to import here since we imported at the top level
                 main_display = CGMainDisplayID()
                 main_height = CGDisplayPixelsHigh(main_display)
                 
                 # Convert to Quartz coordinate system (origin at bottom left)
                 quartz_y = main_height - y
                 
-                # Use Quartz for mouse movement - double call for accuracy
-                # Store coordinates to ensure consistency between calls
+                # Use Quartz for mouse movement with stabilization
                 quartz_x = float(x)
                 quartz_y = float(quartz_y)
                 CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
-                time.sleep(0.01)
+                
+                # Add stabilization pause for first shot accuracy
+                time.sleep(0.05)
+                
+                # Verify position with a second call
                 CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
             except Exception as e:
                 # Fall back to pyautogui if Quartz fails
                 print(f"Quartz mouse movement failed: {e}, falling back to pyautogui")
                 pyautogui.moveTo(x, y, duration=0)
+                time.sleep(0.05)  # Stabilization pause
         else:
-            # Use zero duration for Linux for immediate movement
-            try:
-                # For Linux, ensure we're using integers for better compatibility
-                pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)
-            except Exception as e:
-                print(f"Linux mouse movement error: {e}")
-                # Fallback to float coordinates if integer conversion fails
-                pyautogui.moveTo(x, y, duration=0)
+            # For Linux, use pyautogui with stabilization
+            pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)
+            time.sleep(0.05)  # Stabilization pause
+            pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)  # Verify position
+        
         return True
     except Exception as e:
         print(f"Aiming error: {e}")
@@ -329,15 +294,19 @@ def aim_at_target(x, y):
 key_states = {
     SCAN_KEY: False,
     AIM_KEY: False,
-    EXIT_KEY: False
+    EXIT_KEY: False,
+    SAVE_CONFIG_KEY: False,
+    LOAD_CONFIG_KEY: False
 }
 last_key_time = {
     SCAN_KEY: 0,
     AIM_KEY: 0,
-    EXIT_KEY: 0
+    EXIT_KEY: 0,
+    SAVE_CONFIG_KEY: 0,
+    LOAD_CONFIG_KEY: 0
 }
 # Track which keys should actually trigger actions
-action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY]
+action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY]
 key_lock = threading.Lock()
 
 # Keyboard listener setup
@@ -399,15 +368,83 @@ def key_pressed():
             # Also reset the last key time to prevent immediate re-triggering
             last_key_time[AIM_KEY] = time.time()
             return AIM_KEY
+        elif key_states[SAVE_CONFIG_KEY]:
+            key_states[SAVE_CONFIG_KEY] = False  # Reset after reading
+            return SAVE_CONFIG_KEY
+        elif key_states[LOAD_CONFIG_KEY]:
+            key_states[LOAD_CONFIG_KEY] = False  # Reset after reading
+            return LOAD_CONFIG_KEY
     return None
+
+# Function to update configuration from current settings
+def update_config_from_current():
+    global CONFIG
+    CONFIG['color_tolerance'] = COLOR_TOLERANCE
+    CONFIG['min_contour_area'] = MIN_CONTOUR_AREA
+    CONFIG['scan_key'] = SCAN_KEY
+    CONFIG['aim_key'] = AIM_KEY
+    CONFIG['exit_key'] = EXIT_KEY
+    CONFIG['save_config_key'] = SAVE_CONFIG_KEY
+    CONFIG['load_config_key'] = LOAD_CONFIG_KEY
+    CONFIG['headshot_percentage'] = HEADSHOT_PERCENTAGE
+    # Convert tuples to lists for JSON serialization
+    CONFIG['target_colors'] = [list(color) for color in TARGET_COLORS]
+    return CONFIG
+
+# Function to update current settings from configuration
+def update_current_from_config():
+    global TARGET_COLORS, COLOR_TOLERANCE, MIN_CONTOUR_AREA
+    global SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, HEADSHOT_PERCENTAGE
+    global key_states, last_key_time, action_keys
+    
+    # Update all settings from CONFIG
+    TARGET_COLORS = [tuple(color) for color in CONFIG['target_colors']]
+    COLOR_TOLERANCE = CONFIG['color_tolerance']
+    MIN_CONTOUR_AREA = CONFIG['min_contour_area']
+    SCAN_KEY = CONFIG['scan_key']
+    AIM_KEY = CONFIG['aim_key']
+    EXIT_KEY = CONFIG['exit_key']
+    SAVE_CONFIG_KEY = CONFIG['save_config_key']
+    LOAD_CONFIG_KEY = CONFIG['load_config_key']
+    HEADSHOT_PERCENTAGE = CONFIG['headshot_percentage']
+    
+    # Update key tracking
+    key_states = {
+        SCAN_KEY: False,
+        AIM_KEY: False,
+        EXIT_KEY: False,
+        SAVE_CONFIG_KEY: False,
+        LOAD_CONFIG_KEY: False
+    }
+    last_key_time = {
+        SCAN_KEY: 0,
+        AIM_KEY: 0,
+        EXIT_KEY: 0,
+        SAVE_CONFIG_KEY: 0,
+        LOAD_CONFIG_KEY: 0
+    }
+    action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY]
+    
+    # Print the updated configuration
+    config.print_config(CONFIG)
+
+# Function to reload configuration
+def reload_config():
+    global CONFIG
+    CONFIG = config.load_config()
+    update_current_from_config()
 
 # Main aimbot function
 def aimbot():
     print("Aimbot started!")
     print(f"Running on {platform.system()}")
     print(f"Press '{SCAN_KEY}' to toggle continuous scanning on/off")
-    print(f"Press '{AIM_KEY}' to aim at the last found target")
+    print(f"Press '{SAVE_CONFIG_KEY}' to save current configuration")
+    print(f"Press '{LOAD_CONFIG_KEY}' to reload configuration")
     print(f"Press '{EXIT_KEY}' to exit")
+    
+    # Print current configuration
+    config.print_config(CONFIG)
     
     last_region = None
     current_target = None
@@ -431,6 +468,21 @@ def aimbot():
                 print("Continuous scanning activated")
             else:
                 print("Scanning stopped")
+        
+        # Save current configuration
+        if key == SAVE_CONFIG_KEY:
+            print("Saving current configuration...")
+            updated_config = update_config_from_current()
+            if config.save_config(updated_config):
+                print("Configuration saved successfully!")
+            else:
+                print("Failed to save configuration.")
+        
+        # Reload configuration
+        if key == LOAD_CONFIG_KEY:
+            print("Reloading configuration...")
+            reload_config()
+            print("Configuration reloaded!")
         
         # Scan if scanning is active
         if scanning_active:
@@ -457,7 +509,7 @@ def aimbot():
                 # Apply Retina display scaling for region if needed
                 if platform.system() == 'Darwin' and is_retina_display:
                     # For Retina displays, apply consistent scaling
-                    scale_factor = 2 if not last_region else 1
+                    scale_factor = 2  # Always use scale factor of 2 for Retina displays
                     padding *= scale_factor
                     w *= scale_factor
                     h *= scale_factor
@@ -472,7 +524,6 @@ def aimbot():
                 
                 # Don't automatically aim at targets when found
                 # Only store the target position for manual aiming with AIM_KEY
-                print("Target acquired. Press 'f' to aim.")
                 
                 # Small pause for system stability
                 time.sleep(0.02)  # Reduced delay for faster response
@@ -495,12 +546,35 @@ def aimbot():
 
 # Main function
 def main():
+    global CONFIG
     # Check dependencies
     if not check_dependencies():
         print("Warning: Some dependencies are missing. The program may not work correctly.")
         choice = input("Continue anyway? (y/n): ")
         if choice.lower() != 'y':
             sys.exit(1)
+    
+    # Check for command line arguments
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--config':
+            # Run configuration menu
+            print("Opening configuration menu...")
+            while True:
+                config.print_config(CONFIG)
+                CONFIG = config.modify_config(CONFIG)
+                save = input("Save changes? (y/n): ")
+                if save.lower() == 'y':
+                    if config.save_config(CONFIG):
+                        print("Configuration saved!")
+                    else:
+                        print("Failed to save configuration.")
+                
+                again = input("Continue editing? (y/n): ")
+                if again.lower() != 'y':
+                    break
+            
+            # Update current settings from the modified config
+            update_current_from_config()
     
     # Start keyboard listener
     keyboard_listener.start()
