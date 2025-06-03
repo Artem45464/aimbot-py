@@ -35,7 +35,7 @@ REM Check Python version (must be 3.6 or higher)
 %PYTHON% -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Python 3.6 or higher is required.
-    %PYTHON% -c "import sys; print('Current Python version:', '.'.join(map(str, sys.version_info[:3])))"
+    for /f "tokens=*" %%i in ('%PYTHON% -c "import sys; print(\"Current Python version: \" + \".\".join(map(str, sys.version_info[:3])))"') do echo %%i
     pause
     exit /b 1
 )
@@ -71,26 +71,39 @@ if not exist .venv\ (
 
 REM Run the application using the virtual environment
 echo Starting aimbot...
-REM Check if Python exists in the virtual environment
+REM Check if Python exists in the virtual environment and required packages are installed
 if not exist .venv\Scripts\python.exe (
     echo Python interpreter not found in virtual environment. Recreating environment...
-    rmdir /s /q .venv
-    %PYTHON% -m venv .venv
-    if %ERRORLEVEL% NEQ 0 (
-        echo Failed to recreate virtual environment.
-        pause
-        exit /b 1
-    )
-    .venv\Scripts\pip install -r requirements.txt
-    .venv\Scripts\pip install pywin32
-    
-    REM Verify the environment was recreated successfully
-    if not exist .venv\Scripts\python.exe (
-        echo Error: Failed to recreate Python interpreter.
-        pause
-        exit /b 1
-    )
+    goto :recreate_env
 )
+
+REM Verify required packages are installed
+.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Required packages missing. Recreating environment...
+    goto :recreate_env
+)
+
+:recreate_env
+rmdir /s /q .venv
+%PYTHON% -m venv .venv
+if %ERRORLEVEL% NEQ 0 (
+    echo Failed to recreate virtual environment.
+    pause
+    exit /b 1
+)
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install pywin32
+
+REM Verify the environment was recreated successfully
+if not exist .venv\Scripts\python.exe (
+    echo Error: Failed to recreate Python interpreter.
+    pause
+    exit /b 1
+)
+goto :run_app
+
+:run_app
 .venv\Scripts\python main.py
 
 REM If we get here, the program has exited
