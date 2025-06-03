@@ -46,14 +46,33 @@ fi
 
 # Run the application using the virtual environment
 echo "Starting aimbot..."
-# Check if Python exists in the virtual environment
-if [ ! -f ".venv/bin/python" ]; then
-    echo "Python interpreter not found in virtual environment. Recreating environment..."
+# Check if Python exists and works in the virtual environment
+if [ ! -f ".venv/bin/python" ] || ! .venv/bin/python -c "import cv2, numpy, mss, pyautogui" &>/dev/null; then
+    echo "Python interpreter not found or required packages missing. Recreating environment..."
     rm -rf .venv
-    python3 -m venv .venv
-    .venv/bin/pip install -r requirements.txt
+    python3 -m venv .venv || {
+        echo "Failed to recreate virtual environment."
+        read -p "Press Enter to exit..."
+        exit 1
+    }
+    .venv/bin/pip install -r requirements.txt || {
+        echo "Failed to install dependencies."
+        read -p "Press Enter to exit..."
+        exit 1
+    }
+    .venv/bin/pip install python-xlib || {
+        echo "Warning: Failed to install Linux-specific packages."
+        echo "Some features may not work correctly."
+    }
+fi
+
+# Check for X11 Python bindings
+if ! .venv/bin/python -c "from Xlib import display" &>/dev/null; then
+    echo "Warning: X11 Python bindings not found. Mouse movement may not work correctly."
+    echo "Trying to install required packages..."
     .venv/bin/pip install python-xlib
 fi
+
 .venv/bin/python main.py
 
 # If we get here, the program has exited
