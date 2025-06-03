@@ -3,7 +3,8 @@
 Alternative cross-platform launcher for the aimbot
 
 This script provides an alternative way to run the aimbot directly with Python:
-    python run.py
+    python run.py              # Run the aimbot
+    python run.py --config     # Open the configuration menu
 
 The platform-specific launcher scripts (mac_run.command, linux_run.sh, windows_run.bat)
 are the recommended way to run the application.
@@ -87,7 +88,13 @@ def main():
         if not os.path.exists(main_script):
             print(f"Error: Main script not found at {main_script}")
             sys.exit(1)
-        subprocess.run([venv_python, main_script], check=False)
+        
+        # Pass any command line arguments to the main script
+        cmd = [venv_python, main_script]
+        if len(sys.argv) > 1:
+            cmd.extend(sys.argv[1:])
+        
+        subprocess.run(cmd, check=False)
     except Exception as e:
         print(f"Error running the script: {e}")
         sys.exit(1)
@@ -118,6 +125,9 @@ def setup_environment(script_dir):
         print("Installing dependencies...")
         if platform.system() == "Windows":
             pip = os.path.join(script_dir, ".venv", "Scripts", "pip")
+            if not os.path.exists(pip):
+                if os.path.exists(pip + ".exe"):
+                    pip = pip + ".exe"
         else:  # macOS or Linux
             pip = os.path.join(script_dir, ".venv", "bin", "pip")
             
