@@ -49,21 +49,32 @@ if [ ! -d ".venv" ]; then
     echo "Setup complete!"
 fi
 
+# Run the application using the virtual environment
+echo "Starting aimbot..."
+# Check if Python exists and works in the virtual environment
+if [ ! -f ".venv/bin/python" ] || ! .venv/bin/python -c "import cv2, numpy, mss, pyautogui" &>/dev/null; then
+    echo "Python interpreter not found or required packages missing. Recreating environment..."
+    rm -rf .venv
+    python3 -m venv .venv || {
+        echo "Failed to recreate virtual environment."
+        read -p "Press Enter to exit..."
+        exit 1
+    }
+    .venv/bin/pip install -r requirements.txt || {
+        echo "Failed to install dependencies."
+        read -p "Press Enter to exit..."
+        exit 1
+    }
+    .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz || {
+        echo "Warning: Failed to install macOS-specific packages."
+        echo "Some features may not work correctly."
+    }
+fi
+
 # Check for Quartz framework
 if ! .venv/bin/python -c "from Quartz import CGPostMouseEvent" &>/dev/null; then
     echo "Warning: Quartz framework not found. Mouse movement may not work correctly."
     echo "Trying to install required packages..."
-    .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz
-fi
-
-# Run the application using the virtual environment
-echo "Starting aimbot..."
-# Check if Python exists in the virtual environment
-if [ ! -f ".venv/bin/python" ]; then
-    echo "Python interpreter not found in virtual environment. Recreating environment..."
-    rm -rf .venv
-    python3 -m venv .venv
-    .venv/bin/pip install -r requirements.txt
     .venv/bin/pip install pyobjc-core pyobjc-framework-Quartz
 fi
 .venv/bin/python main.py
