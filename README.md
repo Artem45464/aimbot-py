@@ -42,7 +42,7 @@ If the quick start scripts don't work:
 
 ## Controls
 - Press 'y' to toggle continuous scanning on/off
-- Press 'f' to aim at the last found target
+- Press 'f' to aim at the last found target (auto-fires if enabled)
 - Press 'o' to save current configuration
 - Press 'p' to reload configuration
 - Press 'q' to exit
@@ -58,7 +58,10 @@ python main.py --config
 This allows you to:
 - Change color tolerance
 - Adjust minimum contour area
+- Toggle dynamic area adjustment for distant targets
 - Set headshot targeting percentage
+- Configure aim delay
+- Toggle auto-fire functionality
 - Customize keyboard controls
 - Reset to default settings
 
@@ -71,7 +74,10 @@ You can modify the following settings:
 - `target_colors`: List of RGB colors to detect
 - `color_tolerance`: How much color variation to allow
 - `min_contour_area`: Minimum size of targets to detect
+- `dynamic_area`: Whether to adjust contour area for distant targets
 - `headshot_percentage`: Where to aim on targets (0.1 = top 10%)
+- `aim_delay`: Delay in seconds before aiming (0 = no delay)
+- `auto_fire`: Whether to automatically click when aiming
 - `scan_key`, `aim_key`, `exit_key`, etc.: Keyboard controls
 
 ## Compatible Games
@@ -90,6 +96,9 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 - Multi-color target detection (red, green, blue, yellow, purple, cyan, orange, white)
 - Enhanced image processing with contrast enhancement
 - Precise headshot targeting (configurable targeting height)
+- Dynamic area adjustment for targets at different distances
+- Configurable aim delay for more natural movement
+- Auto-fire option for one-click targeting and shooting
 - Adaptive region-based scanning for better performance
 - Cross-platform support with optimized mouse movement for each OS
 - Automatic dependency installation and environment setup
