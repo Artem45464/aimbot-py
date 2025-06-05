@@ -44,7 +44,8 @@ def main():
         # Check for accessibility permissions
         try:
             import pyautogui
-            # Just trying to use pyautogui will trigger permission dialogs if needed
+            # Actually test mouse position access to trigger permission dialogs
+            pyautogui.position()
         except ImportError:
             pass
         except Exception as e:
@@ -94,7 +95,10 @@ def main():
         if len(sys.argv) > 1:
             cmd.extend(sys.argv[1:])
         
-        subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, check=False)
+        if result.returncode != 0:
+            print(f"Error: The aimbot exited with code {result.returncode}")
+            sys.exit(result.returncode)
     except Exception as e:
         print(f"Error running the script: {e}")
         sys.exit(1)
@@ -132,9 +136,17 @@ def setup_environment(script_dir):
             pip = os.path.join(script_dir, ".venv", "bin", "pip")
             
         try:
+            print("Installing dependencies from requirements.txt...")
             result = subprocess.run([pip, "install", "-r", os.path.join(script_dir, "requirements.txt")], check=False)
             if result.returncode != 0:
                 print("Warning: Some dependencies may not have installed correctly")
+                
+            # Verify critical dependencies
+            venv_python = os.path.join(script_dir, ".venv", "bin", "python") if platform.system() != "Windows" else os.path.join(script_dir, ".venv", "Scripts", "python.exe")
+            verify_cmd = [venv_python, "-c", "import cv2, numpy, mss, pyautogui, pynput"]
+            verify_result = subprocess.run(verify_cmd, check=False)
+            if verify_result.returncode != 0:
+                print("Warning: Critical dependencies are missing. The aimbot may not work correctly.")
         except Exception as e:
             print(f"Error installing dependencies: {e}")
             print("Continuing anyway, but some features may not work correctly.")
