@@ -83,8 +83,10 @@ if %ERRORLEVEL% NEQ 0 (
     echo Required packages missing. Recreating environment...
     goto :recreate_env
 )
+goto :run_app
 
 :recreate_env
+echo Recreating virtual environment...
 rmdir /s /q .venv
 %PYTHON% -m venv .venv
 if %ERRORLEVEL% NEQ 0 (
@@ -92,8 +94,16 @@ if %ERRORLEVEL% NEQ 0 (
     pause
     exit /b 1
 )
+echo Installing dependencies...
 .venv\Scripts\pip install -r requirements.txt
+if %ERRORLEVEL% NEQ 0 (
+    echo Warning: Some dependencies may not have installed correctly.
+)
+echo Installing Windows-specific packages...
 .venv\Scripts\pip install pywin32
+if %ERRORLEVEL% NEQ 0 (
+    echo Warning: Failed to install Windows-specific packages.
+)
 
 REM Verify the environment was recreated successfully
 if not exist .venv\Scripts\python.exe (
@@ -101,10 +111,20 @@ if not exist .venv\Scripts\python.exe (
     pause
     exit /b 1
 )
+
+REM Verify required packages after recreation
+.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: Required packages still missing after environment recreation.
+    echo Please try running the script again or install packages manually.
+    pause
+    exit /b 1
+)
+
 goto :run_app
 
 :run_app
-.venv\Scripts\python main.py
+.venv\Scripts\python main.py %*
 
 REM If we get here, the program has exited
 pause
