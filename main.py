@@ -33,6 +33,9 @@ EXIT_KEY = CONFIG['exit_key']
 SAVE_CONFIG_KEY = CONFIG['save_config_key']
 LOAD_CONFIG_KEY = CONFIG['load_config_key']
 HEADSHOT_PERCENTAGE = CONFIG['headshot_percentage']
+AIM_DELAY = CONFIG.get('aim_delay', 0.0)  # Default to 0 if not in config
+AUTO_FIRE = CONFIG.get('auto_fire', False)  # Default to False if not in config
+DYNAMIC_AREA = CONFIG.get('dynamic_area', True)  # Default to True if not in config
 
 # Check for required dependencies
 def check_dependencies():
@@ -175,9 +178,20 @@ def find_target(img):
         
         if not contours:
             return None
-            
+        
+        # Determine minimum contour area based on dynamic adjustment
+        min_area = MIN_CONTOUR_AREA
+        if DYNAMIC_AREA:
+            # If we're looking at a small region, reduce the minimum area
+            # This helps detect targets that are far away (smaller on screen)
+            if img_width < screen_width / 2 or img_height < screen_height / 2:
+                # Calculate a scaling factor based on how small the region is
+                scale_factor = (img_width * img_height) / (screen_width * screen_height)
+                # Adjust minimum area based on scale, but don't go below 5
+                min_area = max(5, int(MIN_CONTOUR_AREA * scale_factor * 2))
+                
         # Filter and find largest contour
-        valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > MIN_CONTOUR_AREA]
+        valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
         if not valid_contours:
             return None
             
@@ -387,6 +401,9 @@ def update_config_from_current():
     CONFIG['save_config_key'] = SAVE_CONFIG_KEY
     CONFIG['load_config_key'] = LOAD_CONFIG_KEY
     CONFIG['headshot_percentage'] = HEADSHOT_PERCENTAGE
+    CONFIG['aim_delay'] = AIM_DELAY
+    CONFIG['auto_fire'] = AUTO_FIRE
+    CONFIG['dynamic_area'] = DYNAMIC_AREA
     # Convert tuples to lists for JSON serialization
     CONFIG['target_colors'] = [list(color) for color in TARGET_COLORS]
     return CONFIG
@@ -394,7 +411,7 @@ def update_config_from_current():
 # Function to update current settings from configuration
 def update_current_from_config():
     global TARGET_COLORS, COLOR_TOLERANCE, MIN_CONTOUR_AREA
-    global SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, HEADSHOT_PERCENTAGE
+    global SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, HEADSHOT_PERCENTAGE, AIM_DELAY, AUTO_FIRE, DYNAMIC_AREA
     global key_states, last_key_time, action_keys
     
     # Update all settings from CONFIG
@@ -407,6 +424,9 @@ def update_current_from_config():
     SAVE_CONFIG_KEY = CONFIG['save_config_key']
     LOAD_CONFIG_KEY = CONFIG['load_config_key']
     HEADSHOT_PERCENTAGE = CONFIG['headshot_percentage']
+    AIM_DELAY = CONFIG.get('aim_delay', 0.0)  # Default to 0 if not in config
+    AUTO_FIRE = CONFIG.get('auto_fire', False)  # Default to False if not in config
+    DYNAMIC_AREA = CONFIG.get('dynamic_area', True)  # Default to True if not in config
     
     # Update key tracking
     key_states = {
@@ -439,9 +459,14 @@ def aimbot():
     print("Aimbot started!")
     print(f"Running on {platform.system()}")
     print(f"Press '{SCAN_KEY}' to toggle continuous scanning on/off")
+    print(f"Press '{AIM_KEY}' to aim at the last found target")
     print(f"Press '{SAVE_CONFIG_KEY}' to save current configuration")
     print(f"Press '{LOAD_CONFIG_KEY}' to reload configuration")
     print(f"Press '{EXIT_KEY}' to exit")
+    
+    # Show auto fire status
+    if AUTO_FIRE:
+        print("Auto fire is ENABLED - will automatically click when aiming")
     
     # Print current configuration
     config.print_config(CONFIG)
@@ -536,10 +561,24 @@ def aimbot():
                 time.sleep(0.05)
         
         # Aim at target if AIM_KEY is pressed and we have a target
-        if key == AIM_KEY and current_target:
-            x, y = current_target
-            print(f"Aiming at ({int(x)}, {int(y)})")
-            aim_at_target(x, y)
+        if key == AIM_KEY:
+            if current_target:
+                x, y = current_target
+                print(f"Aiming at ({int(x)}, {int(y)})")
+                
+                # Apply aim delay if configured
+                if AIM_DELAY > 0:
+                    print(f"Applying aim delay of {AIM_DELAY} seconds...")
+                    time.sleep(AIM_DELAY)
+                    
+                aim_at_target(x, y)
+                
+                # Auto fire if enabled
+                if AUTO_FIRE:
+                    print("Auto firing...")
+                    pyautogui.click()
+            else:
+                print("No target found. Scan for targets first.")
         
         # Small pause for system stability
         time.sleep(0.01)
@@ -547,6 +586,21 @@ def aimbot():
 # Main function
 def main():
     global CONFIG
+    # Check if aim_delay is in the config, add it if not
+    if 'aim_delay' not in CONFIG:
+        CONFIG['aim_delay'] = 0.0
+        config.save_config(CONFIG)
+        
+    # Check if auto_fire is in the config, add it if not
+    if 'auto_fire' not in CONFIG:
+        CONFIG['auto_fire'] = False
+        config.save_config(CONFIG)
+        
+    # Check if dynamic_area is in the config, add it if not
+    if 'dynamic_area' not in CONFIG:
+        CONFIG['dynamic_area'] = True
+        config.save_config(CONFIG)
+        
     # Check dependencies
     if not check_dependencies():
         print("Warning: Some dependencies are missing. The program may not work correctly.")
