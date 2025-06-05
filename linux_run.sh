@@ -71,9 +71,16 @@ if ! .venv/bin/python -c "from Xlib import display" &>/dev/null; then
     echo "Warning: X11 Python bindings not found. Mouse movement may not work correctly."
     echo "Trying to install required packages..."
     .venv/bin/pip install python-xlib
+    
+    # Verify installation was successful
+    if ! .venv/bin/python -c "from Xlib import display" &>/dev/null; then
+        echo "Warning: Failed to install X11 Python bindings."
+        echo "Mouse movement may not work correctly."
+    fi
 fi
 
-.venv/bin/python main.py
+# Run the application
+.venv/bin/python main.py "$@"
 
 # If we get here, the program has exited
 read -p "Press Enter to exit..."
