@@ -71,6 +71,9 @@ DEFAULT_CONFIG = {
     'save_config_key': 'o',
     'load_config_key': 'p',
     'headshot_percentage': 0.10,  # Target the top 10% of the contour
+    'aim_delay': 0.0,  # Delay in seconds before aiming at target (0 = no delay)
+    'auto_fire': False,  # Whether to automatically fire when aiming at a target
+    'dynamic_area': True,  # Whether to dynamically adjust contour area based on target size
 }
 
 def load_config(config_path=None):
@@ -138,7 +141,10 @@ def print_config(config):
     print("\n=== Current Configuration ===")
     print(f"Color Tolerance: {config['color_tolerance']}")
     print(f"Minimum Contour Area: {config['min_contour_area']}")
+    print(f"Dynamic Area Adjustment: {'Enabled' if config.get('dynamic_area', True) else 'Disabled'}")
     print(f"Headshot Percentage: {config['headshot_percentage'] * 100}%")
+    print(f"Aim Delay: {config['aim_delay']}s")
+    print(f"Auto Fire: {'Enabled' if config.get('auto_fire', False) else 'Disabled'}")
     print("\nKeyboard Controls:")
     print(f"Scan Toggle: '{config['scan_key']}'")
     print(f"Aim: '{config['aim_key']}'")
@@ -161,12 +167,15 @@ def modify_config(config):
     print("\n=== Configuration Menu ===")
     print("1. Change color tolerance")
     print("2. Change minimum contour area")
-    print("3. Change headshot percentage")
-    print("4. Change keyboard controls")
-    print("5. Reset to defaults")
-    print("6. Back to main menu")
+    print("3. Toggle dynamic area adjustment")
+    print("4. Change headshot percentage")
+    print("5. Change aim delay")
+    print("6. Toggle auto fire")
+    print("7. Change keyboard controls")
+    print("8. Reset to defaults")
+    print("9. Back to main menu")
     
-    choice = input("Enter your choice (1-6): ")
+    choice = input("Enter your choice (1-9): ")
     
     if choice == '1':
         try:
@@ -191,6 +200,12 @@ def modify_config(config):
             print("Invalid input. Please enter a number.")
             
     elif choice == '3':
+        dynamic_area = config.get('dynamic_area', True)
+        new_setting = not dynamic_area
+        config['dynamic_area'] = new_setting
+        print(f"Dynamic area adjustment {'enabled' if new_setting else 'disabled'}")
+            
+    elif choice == '4':
         try:
             value = float(input(f"Enter new headshot percentage (current: {config['headshot_percentage'] * 100}%): "))
             if 0 < value <= 100:
@@ -201,7 +216,24 @@ def modify_config(config):
         except ValueError:
             print("Invalid input. Please enter a number.")
             
-    elif choice == '4':
+    elif choice == '5':
+        try:
+            value = float(input(f"Enter new aim delay in seconds (current: {config['aim_delay']}): "))
+            if value >= 0:
+                config['aim_delay'] = value
+                print(f"Aim delay set to {value} seconds")
+            else:
+                print("Value must be 0 or greater")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            
+    elif choice == '6':
+        auto_fire = config.get('auto_fire', False)
+        new_setting = not auto_fire
+        config['auto_fire'] = new_setting
+        print(f"Auto fire {'enabled' if new_setting else 'disabled'}")
+            
+    elif choice == '7':
         print("\n=== Keyboard Controls ===")
         print("1. Change scan toggle key")
         print("2. Change aim key")
@@ -252,7 +284,7 @@ def modify_config(config):
             else:
                 print("Invalid key. Please enter a single character.")
     
-    elif choice == '5':
+    elif choice == '8':
         confirm = input("Are you sure you want to reset to default settings? (y/n): ")
         if confirm.lower() == 'y':
             print("Configuration reset to defaults.")
