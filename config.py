@@ -74,6 +74,9 @@ DEFAULT_CONFIG = {
     'aim_delay': 0.0,  # Delay in seconds before aiming at target (0 = no delay)
     'auto_fire': False,  # Whether to automatically fire when aiming at a target
     'dynamic_area': True,  # Whether to dynamically adjust contour area based on target size
+    'prediction_strength': 100,  # Strength of movement prediction (0-100%)
+    'accel_compensation': 50,  # Acceleration compensation percentage (0-100%)
+    'latency_compensation': 50  # System latency compensation in ms (0-100ms)
 }
 
 def load_config(config_path=None):
@@ -145,6 +148,13 @@ def print_config(config):
     print(f"Headshot Percentage: {config['headshot_percentage'] * 100}%")
     print(f"Aim Delay: {config['aim_delay']}s")
     print(f"Auto Fire: {'Enabled' if config.get('auto_fire', False) else 'Disabled'}")
+    
+    # Advanced targeting settings
+    print("\nAdvanced Targeting:")
+    print(f"Prediction Strength: {config.get('prediction_strength', 100)}%")
+    print(f"Acceleration Compensation: {config.get('accel_compensation', 50)}%")
+    print(f"Latency Compensation: {config.get('latency_compensation', 50)}ms")
+    
     print("\nKeyboard Controls:")
     print(f"Scan Toggle: '{config['scan_key']}'")
     print(f"Aim: '{config['aim_key']}'")
@@ -172,8 +182,9 @@ def modify_config(config):
     print("5. Change aim delay")
     print("6. Toggle auto fire")
     print("7. Change keyboard controls")
-    print("8. Reset to defaults")
-    print("9. Back to main menu")
+    print("8. Advanced targeting settings")
+    print("9. Reset to defaults")
+    print("0. Back to main menu")
     
     choice = input("Enter your choice (1-9): ")
     
@@ -285,9 +296,57 @@ def modify_config(config):
                 print("Invalid key. Please enter a single character.")
     
     elif choice == '8':
+        print("\n=== Advanced Targeting Settings ===")
+        print("1. Configure prediction strength (0-100%)")
+        print("2. Configure acceleration compensation (0-100%)")
+        print("3. Configure system latency compensation (0-100ms)")
+        print("4. Back to main menu")
+        
+        adv_choice = input("Enter your choice (1-4): ")
+        
+        if adv_choice == '1':
+            try:
+                current = config.get('prediction_strength', 100)
+                value = int(input(f"Enter prediction strength percentage (current: {current}%): "))
+                if 0 <= value <= 100:
+                    config['prediction_strength'] = value
+                    print(f"Prediction strength set to {value}%")
+                else:
+                    print("Value must be between 0 and 100")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+                
+        elif adv_choice == '2':
+            try:
+                current = config.get('accel_compensation', 50)
+                value = int(input(f"Enter acceleration compensation percentage (current: {current}%): "))
+                if 0 <= value <= 100:
+                    config['accel_compensation'] = value
+                    print(f"Acceleration compensation set to {value}%")
+                else:
+                    print("Value must be between 0 and 100")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+                
+        elif adv_choice == '3':
+            try:
+                current = config.get('latency_compensation', 50)
+                value = int(input(f"Enter system latency compensation in ms (current: {current}ms): "))
+                if 0 <= value <= 100:
+                    config['latency_compensation'] = value
+                    print(f"System latency compensation set to {value}ms")
+                else:
+                    print("Value must be between 0 and 100")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+    
+    elif choice == '9':
         confirm = input("Are you sure you want to reset to default settings? (y/n): ")
         if confirm.lower() == 'y':
             print("Configuration reset to defaults.")
             return DEFAULT_CONFIG.copy()
+            
+    elif choice == '0':
+        print("Returning to main menu.")
     
     return config
