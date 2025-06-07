@@ -13,6 +13,8 @@ import os
 import sys
 import platform
 import subprocess
+import json
+import multiprocessing
 
 def main():
     # Check Python version
@@ -20,6 +22,9 @@ def main():
         print("Error: Python 3.6 or higher is required")
         print(f"Current Python version: {platform.python_version()}")
         sys.exit(1)
+        
+    # Detect system capabilities for optimal performance
+    detect_system_capabilities()
         
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -92,8 +97,29 @@ def main():
         
         # Pass any command line arguments to the main script
         cmd = [venv_python, main_script]
+        
+        # Add auto-optimization flag if no specific config is requested
         if len(sys.argv) > 1:
             cmd.extend(sys.argv[1:])
+        else:
+            # Auto-optimize based on detected system capabilities
+            system_info_path = os.path.expanduser('~/.aimbot_system_info.json')
+            if os.path.exists(system_info_path):
+                try:
+                    with open(system_info_path, 'r') as f:
+                        system_info = json.load(f)
+                    
+                    # Add optimization flags based on system capabilities
+                    if system_info.get("cpu_cores", 0) >= 8:
+                        cmd.append("--optimize-cpu")
+                    if system_info.get("memory", 0) >= 16:
+                        cmd.append("--optimize-memory")
+                    if "nvidia" in str(system_info.get("gpu", "")).lower():
+                        cmd.append("--use-gpu")
+                        
+                    print("Auto-optimizing for your hardware...")
+                except Exception as e:
+                    print(f"Warning: Could not load system info for optimization: {e}")
         
         result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
@@ -102,6 +128,96 @@ def main():
     except Exception as e:
         print(f"Error running the script: {e}")
         sys.exit(1)
+
+# Detect system capabilities for optimal performance
+def detect_system_capabilities():
+    """Detect system capabilities and optimize settings for the current hardware"""
+    system_info = {
+        "os": platform.system(),
+        "cpu_cores": multiprocessing.cpu_count(),
+        "python_version": platform.python_version(),
+        "memory": "unknown"
+    }
+    
+    # Get memory info based on platform
+    try:
+        if platform.system() == "Windows":
+            # Windows memory detection
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            c_ulonglong = ctypes.c_ulonglong
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ('dwLength', ctypes.c_ulong),
+                    ('dwMemoryLoad', ctypes.c_ulong),
+                    ('ullTotalPhys', c_ulonglong),
+                    ('ullAvailPhys', c_ulonglong),
+                    ('ullTotalPageFile', c_ulonglong),
+                    ('ullAvailPageFile', c_ulonglong),
+                    ('ullTotalVirtual', c_ulonglong),
+                    ('ullAvailVirtual', c_ulonglong),
+                    ('ullExtendedVirtual', c_ulonglong),
+                ]
+            memoryStatus = MEMORYSTATUSEX()
+            memoryStatus.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            kernel32.GlobalMemoryStatusEx(ctypes.byref(memoryStatus))
+            system_info["memory"] = memoryStatus.ullTotalPhys / (1024**3)  # Convert to GB
+            
+        elif platform.system() == "Linux":
+            # Linux memory detection
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    if 'MemTotal' in line:
+                        system_info["memory"] = int(line.split()[1]) / (1024**2)  # Convert to GB
+                        break
+                        
+        elif platform.system() == "Darwin":  # macOS
+            # macOS memory detection
+            output = subprocess.check_output(['sysctl', 'hw.memsize']).decode('utf-8')
+            system_info["memory"] = int(output.split()[1]) / (1024**3)  # Convert to GB
+    except Exception as e:
+        print(f"Warning: Could not detect memory: {e}")
+    
+    # Detect GPU if possible
+    try:
+        if platform.system() == "Windows":
+            output = subprocess.check_output(['wmic', 'path', 'win32_VideoController', 'get', 'name']).decode('utf-8')
+            system_info["gpu"] = output.strip().split('\\n')[1].strip()
+        elif platform.system() == "Linux":
+            output = subprocess.check_output(['lspci'], stderr=subprocess.STDOUT).decode('utf-8')
+            for line in output.split('\\n'):
+                if 'VGA' in line or '3D' in line:
+                    system_info["gpu"] = line.split(':')[-1].strip()
+                    break
+        elif platform.system() == "Darwin":
+            output = subprocess.check_output(['system_profiler', 'SPDisplaysDataType']).decode('utf-8')
+            for line in output.split('\\n'):
+                if 'Chipset Model' in line:
+                    system_info["gpu"] = line.split(':')[-1].strip()
+                    break
+    except Exception:
+        system_info["gpu"] = "unknown"
+    
+    # Save system info to a file for the aimbot to use
+    config_dir = os.path.dirname(os.path.expanduser('~/.aimbot_config.json'))
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir, exist_ok=True)
+    
+    system_info_path = os.path.expanduser('~/.aimbot_system_info.json')
+    try:
+        with open(system_info_path, 'w') as f:
+            json.dump(system_info, f, indent=2)
+        print(f"System capabilities detected: {system_info['os']}, {system_info['cpu_cores']} cores")
+        
+        # Optimize settings based on hardware
+        if system_info["cpu_cores"] >= 8:
+            print("High-performance CPU detected: Enabling advanced prediction")
+        if system_info.get("memory", 0) >= 16:
+            print("High memory detected: Enabling enhanced target tracking")
+        if "nvidia" in str(system_info.get("gpu", "")).lower():
+            print("NVIDIA GPU detected: Enabling GPU acceleration")
+    except Exception as e:
+        print(f"Warning: Could not save system info: {e}")
 
 def setup_environment(script_dir):
     """Set up the virtual environment and install dependencies"""
@@ -141,8 +257,10 @@ def setup_environment(script_dir):
             if result.returncode != 0:
                 print("Warning: Some dependencies may not have installed correctly")
                 
-            # Verify critical dependencies
-            venv_python = os.path.join(script_dir, ".venv", "bin", "python") if platform.system() != "Windows" else os.path.join(script_dir, ".venv", "Scripts", "python.exe")
+            # Verify critical dependencies using the pip path to determine the correct python path
+            venv_python = pip.replace("pip", "python")
+            if platform.system() == "Windows" and not venv_python.endswith(".exe"):
+                venv_python += ".exe"
             verify_cmd = [venv_python, "-c", "import cv2, numpy, mss, pyautogui, pynput"]
             verify_result = subprocess.run(verify_cmd, check=False)
             if verify_result.returncode != 0:
