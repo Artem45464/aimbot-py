@@ -137,8 +137,12 @@ def capture_screen(region=None):
         return np.zeros((100, 100, 3), dtype=np.uint8)
 
 # Find target using color detection
-# Global variable to track if we're on a Retina display
+# Global variables
 is_retina_display = False
+previous_targets = []
+last_aim_time = 0
+target_velocity_history = []
+accuracy_stats = {'hits': 0, 'misses': 0}
 
 def find_target(img):
     try:
@@ -187,8 +191,8 @@ def find_target(img):
             if img_width < screen_width / 2 or img_height < screen_height / 2:
                 # Calculate a scaling factor based on how small the region is
                 scale_factor = (img_width * img_height) / (screen_width * screen_height)
-                # Adjust minimum area based on scale, but don't go below 5
-                min_area = max(5, int(MIN_CONTOUR_AREA * scale_factor * 2))
+                # More aggressive scaling for distant targets (smaller minimum area)
+                min_area = max(3, int(MIN_CONTOUR_AREA * scale_factor))
                 
         # Filter and find largest contour
         valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
@@ -207,7 +211,35 @@ def find_target(img):
         
         # Target the center of the top portion of the contour (more precise headshot)
         target_x = M["m10"] / M["m00"]  # Center X position
-        target_y = y + h * HEADSHOT_PERCENTAGE  # Target upper portion for better precision (headshot)
+        
+        # Advanced adaptive headshot targeting based on target size and movement
+        adjusted_headshot = HEADSHOT_PERCENTAGE
+        contour_area = cv2.contourArea(largest)
+        
+        # For small/distant targets, aim higher
+        if contour_area < MIN_CONTOUR_AREA * 3:
+            adjusted_headshot = max(0.05, HEADSHOT_PERCENTAGE - 0.05)  # Aim higher
+        
+        # Check if target is moving (if we have previous targets)
+        if len(previous_targets) >= 2:
+            # Calculate vertical velocity if we have previous targets
+            try:
+                current_time = time.time()  # Get current time
+                prev_x, prev_y = previous_targets[-1][0], previous_targets[-1][1]
+                time_diff = current_time - previous_targets[-1][2]
+                
+                if time_diff > 0:
+                    # If target is moving upward, aim slightly higher to compensate
+                    y_velocity = (y - prev_y) / time_diff
+                    if y_velocity < -5:  # Moving up
+                        adjusted_headshot = max(0.03, adjusted_headshot - 0.03)
+                    # If target is moving downward, aim slightly lower to compensate
+                    elif y_velocity > 5:  # Moving down
+                        adjusted_headshot = min(0.15, adjusted_headshot + 0.03)
+            except (IndexError, KeyError):
+                pass  # Ignore if we can't calculate velocity
+            
+        target_y = y + h * adjusted_headshot  # Target upper portion for better precision (headshot)
         
         # Convert to screen coordinates
         target_x = target_x * screen_width / img_width
@@ -219,23 +251,21 @@ def find_target(img):
             target_x /= 2
             target_y /= 2
             
-            # Also adjust the bounding box for consistent region tracking
-            x /= 2
-            y /= 2
-            w /= 2
-            h /= 2
-            
         return (target_x, target_y, (x, y, w, h))
     except Exception as e:
         print(f"Target detection error: {e}")
         return None
 
-# Aim at target with platform-specific optimizations
+# These variables are already defined at the top of the file
+
+# Aim at target with adaptive intelligence
 def aim_at_target(x, y):
     try:
+        global previous_targets, last_aim_time
         screen_width, screen_height = pyautogui.size()
+        current_time = time.time()
         
-        # Ensure coordinates are within screen bounds and are valid numbers
+        # Validate coordinates
         if not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
             print("Invalid target coordinates")
             return False
@@ -244,61 +274,216 @@ def aim_at_target(x, y):
             print("Invalid target coordinates (NaN or Inf)")
             return False
         
-        # Use exact floating point values for more precise positioning
-        # This avoids rounding errors that can reduce accuracy
-        x = float(x)
-        y = float(y)
+        # Store target for movement prediction
+        previous_targets.append((x, y, current_time))
+        # Keep only recent targets (last 5)
+        if len(previous_targets) > 5:
+            previous_targets.pop(0)
+            
+        # Predict target movement if we have enough data
+        predicted_x, predicted_y = x, y
+        if len(previous_targets) >= 3:
+            # Calculate velocity based on previous positions with weighted average
+            time_diff = previous_targets[-1][2] - previous_targets[-3][2]
+            if time_diff > 0:
+                x_velocity = (previous_targets[-1][0] - previous_targets[-3][0]) / time_diff
+                y_velocity = (previous_targets[-1][1] - previous_targets[-3][1]) / time_diff
+                
+                # Store velocity data for adaptive learning
+                target_velocity_history.append((x_velocity, y_velocity))
+                if len(target_velocity_history) > 10:
+                    target_velocity_history.pop(0)
+                
+                # Use weighted average of recent velocities for more stable prediction
+                if len(target_velocity_history) >= 3:
+                    weights = [0.5, 0.3, 0.2]  # Most recent velocities have higher weight
+                    x_velocity_avg = sum(v[0] * w for v, w in zip(target_velocity_history[-3:], weights))
+                    y_velocity_avg = sum(v[1] * w for v, w in zip(target_velocity_history[-3:], weights))
+                    
+                    # Apply acceleration factor if target is accelerating
+                    if len(target_velocity_history) >= 5:
+                        x_accel = (target_velocity_history[-1][0] - target_velocity_history[-5][0]) / 4
+                        y_accel = (target_velocity_history[-1][1] - target_velocity_history[-5][1]) / 4
+                        
+                        # Get acceleration compensation from config (0-100%)
+                        accel_compensation = CONFIG.get('accel_compensation', 50) / 100.0
+                        x_velocity_avg += x_accel * accel_compensation
+                        y_velocity_avg += y_accel * accel_compensation
+                        
+                        # Apply learning from accuracy stats
+                        if accuracy_stats['hits'] + accuracy_stats['misses'] > 10:
+                            hit_rate = accuracy_stats['hits'] / (accuracy_stats['hits'] + accuracy_stats['misses'])
+                            # Adjust prediction based on hit rate
+                            if hit_rate < 0.5:  # If accuracy is low, be more aggressive with prediction
+                                x_velocity_avg *= 1.2
+                                y_velocity_avg *= 1.2
+                            elif hit_rate > 0.8:  # If accuracy is high, be more conservative
+                                x_velocity_avg *= 0.9
+                                y_velocity_avg *= 0.9
+                            hit_rate = accuracy_stats['hits'] / (accuracy_stats['hits'] + accuracy_stats['misses'])
+                            # Adjust prediction based on hit rate
+                            if hit_rate < 0.5:  # If accuracy is low, be more aggressive with prediction
+                                x_velocity_avg *= 1.2
+                                y_velocity_avg *= 1.2
+                    
+                    # Predict position based on aim delay and system latency
+                    # Get latency compensation from config (0-100ms)
+                    latency_ms = CONFIG.get('latency_compensation', 50) / 1000.0  # Convert to seconds
+                    system_latency = latency_ms  # Use configured latency
+                    
+                    # Get current position for distance calculation
+                    current_x, current_y = pyautogui.position()
+                    # Calculate distance for adaptive latency
+                    target_distance = math.sqrt((x - current_x)**2 + (y - current_y)**2)
+                    
+                    # Add extra latency for long distances
+                    if target_distance > 300:
+                        system_latency += 0.01  # Add 10ms for long distances
+                    
+                    prediction_time = AIM_DELAY + system_latency
+                    predicted_x = x + (x_velocity_avg * prediction_time)
+                    predicted_y = y + (y_velocity_avg * prediction_time)
+                else:
+                    # Simple prediction if not enough velocity history
+                    prediction_time = AIM_DELAY + 0.05
+                    predicted_x = x + (x_velocity * prediction_time)
+                    predicted_y = y + (y_velocity * prediction_time)
+                
+                # Ensure predicted position is within screen bounds
+                predicted_x = max(0, min(predicted_x, screen_width - 1))
+                predicted_y = max(0, min(predicted_y, screen_height - 1))
         
-        # Ensure coordinates are within screen bounds
-        x = max(0, min(x, screen_width - 1))
-        y = max(0, min(y, screen_height - 1))
+        # Use exact floating point values
+        x = float(predicted_x)
+        y = float(predicted_y)
         
-        # Platform-specific mouse movement
+        # Get current position
+        current_x, current_y = pyautogui.position()
+        
+        # Calculate distance and adapt movement strategy
+        distance = math.sqrt((x - current_x)**2 + (y - current_y)**2)
+        
+        # Adaptive movement based on distance
         if platform.system() == 'Windows':
             try:
-                # Use direct Win32 API for more accurate mouse movement on Windows
                 x_int, y_int = int(round(x)), int(round(y))
+                
+                # Adapt steps based on distance
+                steps = 1
+                if distance > 300:
+                    steps = 5
+                elif distance > 100:
+                    steps = 3
+                
+                # Use bezier curve for more natural, human-like movement
+                if steps > 1:
+                    # Calculate control point for bezier curve (slight arc toward target)
+                    control_x = current_x + (x_int - current_x) * 0.5 + (y_int - current_y) * 0.1
+                    control_y = current_y + (y_int - current_y) * 0.5 - (x_int - current_x) * 0.1
+                    
+                    # Move along bezier curve for more natural movement
+                    for i in range(1, steps):
+                        t = i / steps
+                        # Quadratic bezier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+                        t_inv = 1.0 - t
+                        bezier_x = t_inv*t_inv*current_x + 2*t_inv*t*control_x + t*t*x_int
+                        bezier_y = t_inv*t_inv*current_y + 2*t_inv*t*control_y + t*t*y_int
+                        ctypes.windll.user32.SetCursorPos(int(bezier_x), int(bezier_y))
+                        # Dynamic timing based on distance to target
+                        time.sleep(0.003 + (0.007 * (1 - i/steps)))
+                
+                # Final precise movement
                 ctypes.windll.user32.SetCursorPos(x_int, y_int)
                 
-                # Add stabilization pause for first shot accuracy
-                time.sleep(0.05)
+                # Adaptive stabilization based on distance
+                stabilize_time = min(0.1, max(0.02, distance / 2000))
+                time.sleep(stabilize_time)
                 
-                # Double-check position with a second call for accuracy
+                # Verify position
                 ctypes.windll.user32.SetCursorPos(x_int, y_int)
             except Exception:
-                # Fall back to pyautogui if Win32 API fails
-                pyautogui.moveTo(x, y, duration=0)
-                time.sleep(0.05)  # Stabilization pause
-        elif platform.system() == 'Darwin':  # macOS
+                pyautogui.moveTo(x, y, duration=min(0.1, max(0.01, distance / 2000)))
+                time.sleep(0.05)
+        
+        elif platform.system() == 'Darwin':
             try:
-                # For macOS, use Quartz for more accurate positioning
                 main_display = CGMainDisplayID()
                 main_height = CGDisplayPixelsHigh(main_display)
                 
-                # Convert to Quartz coordinate system (origin at bottom left)
+                # Convert to Quartz coordinates
                 quartz_y = main_height - y
-                
-                # Use Quartz for mouse movement with stabilization
                 quartz_x = float(x)
-                quartz_y = float(quartz_y)
+                
+                # Adapt steps based on distance
+                steps = 1
+                if distance > 300:
+                    steps = 5
+                elif distance > 100:
+                    steps = 3
+                
+                # Use bezier curve for more natural, human-like movement on macOS
+                if steps > 1:
+                    # Calculate control point for bezier curve (slight arc toward target)
+                    control_x = current_x + (quartz_x - current_x) * 0.5 + (quartz_y - (main_height - current_y)) * 0.1
+                    control_y = (main_height - current_y) + (quartz_y - (main_height - current_y)) * 0.5 - (quartz_x - current_x) * 0.1
+                    
+                    # Move along bezier curve for more natural movement
+                    for i in range(1, steps):
+                        t = i / steps
+                        # Quadratic bezier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+                        t_inv = 1.0 - t
+                        bezier_x = t_inv*t_inv*current_x + 2*t_inv*t*control_x + t*t*quartz_x
+                        bezier_y = t_inv*t_inv*(main_height - current_y) + 2*t_inv*t*control_y + t*t*quartz_y
+                        CGPostMouseEvent((bezier_x, bezier_y), True, 1, False)
+                        # Dynamic timing based on distance to target
+                        time.sleep(0.003 + (0.007 * (1 - i/steps)))
+                
+                # Final precise movement
                 CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
                 
-                # Add stabilization pause for first shot accuracy
-                time.sleep(0.05)
+                # Adaptive stabilization based on distance
+                stabilize_time = min(0.1, max(0.02, distance / 2000))
+                time.sleep(stabilize_time)
                 
-                # Verify position with a second call
+                # Verify position
                 CGPostMouseEvent((quartz_x, quartz_y), True, 1, False)
             except Exception as e:
-                # Fall back to pyautogui if Quartz fails
                 print(f"Quartz mouse movement failed: {e}, falling back to pyautogui")
-                pyautogui.moveTo(x, y, duration=0)
-                time.sleep(0.05)  # Stabilization pause
-        else:
-            # For Linux, use pyautogui with stabilization
-            pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)
-            time.sleep(0.05)  # Stabilization pause
-            pyautogui.moveTo(int(round(x)), int(round(y)), duration=0)  # Verify position
+                pyautogui.moveTo(x, y, duration=min(0.1, max(0.01, distance / 2000)))
+                time.sleep(0.05)
         
+        else:  # Linux
+            # Adapt steps based on distance
+            steps = 1
+            if distance > 300:
+                steps = 5
+            elif distance > 100:
+                steps = 3
+            
+            # Use bezier curve for more natural, human-like movement on Linux
+            if steps > 1:
+                # Calculate control point for bezier curve (slight arc toward target)
+                control_x = current_x + (x - current_x) * 0.5 + (y - current_y) * 0.1
+                control_y = current_y + (y - current_y) * 0.5 - (x - current_x) * 0.1
+                
+                # Move along bezier curve for more natural movement
+                for i in range(1, steps):
+                    t = i / steps
+                    # Quadratic bezier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+                    t_inv = 1.0 - t
+                    bezier_x = t_inv*t_inv*current_x + 2*t_inv*t*control_x + t*t*x
+                    bezier_y = t_inv*t_inv*current_y + 2*t_inv*t*control_y + t*t*y
+                    pyautogui.moveTo(int(round(bezier_x)), int(round(bezier_y)), duration=0.003 + (0.007 * (1 - i/steps)))
+            
+            # Final precise movement
+            pyautogui.moveTo(int(round(x)), int(round(y)), duration=0.01)
+            
+            # Adaptive stabilization based on distance
+            stabilize_time = min(0.1, max(0.02, distance / 2000))
+            time.sleep(stabilize_time)
+        
+        # Update last aim time
+        last_aim_time = current_time
         return True
     except Exception as e:
         print(f"Aiming error: {e}")
@@ -404,6 +589,15 @@ def update_config_from_current():
     CONFIG['aim_delay'] = AIM_DELAY
     CONFIG['auto_fire'] = AUTO_FIRE
     CONFIG['dynamic_area'] = DYNAMIC_AREA
+    
+    # Save advanced targeting settings
+    if 'prediction_strength' not in CONFIG:
+        CONFIG['prediction_strength'] = 100
+    if 'accel_compensation' not in CONFIG:
+        CONFIG['accel_compensation'] = 50
+    if 'latency_compensation' not in CONFIG:
+        CONFIG['latency_compensation'] = 50
+        
     # Convert tuples to lists for JSON serialization
     CONFIG['target_colors'] = [list(color) for color in TARGET_COLORS]
     return CONFIG
@@ -536,6 +730,9 @@ def aimbot():
                     # For Retina displays, apply consistent scaling
                     scale_factor = 2  # Always use scale factor of 2 for Retina displays
                     padding *= scale_factor
+                    # Scale all coordinates for proper region tracking
+                    x1 *= scale_factor
+                    y1 *= scale_factor
                     w *= scale_factor
                     h *= scale_factor
                 
@@ -577,6 +774,22 @@ def aimbot():
                 if AUTO_FIRE:
                     print("Auto firing...")
                     pyautogui.click()
+                    
+                    # Track accuracy for learning
+                    # We assume a hit if we're still on target after a short delay
+                    def check_hit():
+                        time.sleep(0.3)  # Wait to see if target is still there
+                        if scanning_active:
+                            screen = capture_screen(last_region) if last_region else capture_screen()
+                            if find_target(screen):
+                                accuracy_stats['misses'] += 1
+                            else:
+                                accuracy_stats['hits'] += 1
+                            print(f"Accuracy: {accuracy_stats['hits']}/{accuracy_stats['hits'] + accuracy_stats['misses']} " + 
+                                  f"({int(accuracy_stats['hits'] * 100 / (accuracy_stats['hits'] + accuracy_stats['misses']))}%)")
+                    
+                    # Start hit detection in a separate thread
+                    threading.Thread(target=check_hit, daemon=True).start()
             else:
                 print("No target found. Scan for targets first.")
         
