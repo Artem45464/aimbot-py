@@ -78,7 +78,7 @@ if not exist .venv\Scripts\python.exe (
 )
 
 REM Verify required packages are installed
-.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui" >nul 2>&1
+.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui, pynput" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo Required packages missing. Recreating environment...
     goto :recreate_env
@@ -113,7 +113,7 @@ if not exist .venv\Scripts\python.exe (
 )
 
 REM Verify required packages after recreation
-.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui" >nul 2>&1
+.venv\Scripts\python -c "import cv2, numpy, mss, pyautogui, pynput" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Required packages still missing after environment recreation.
     echo Please try running the script again or install packages manually.
