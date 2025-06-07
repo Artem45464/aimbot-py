@@ -80,6 +80,11 @@ You can modify the following settings:
 - `auto_fire`: Whether to automatically click when aiming
 - `scan_key`, `aim_key`, `exit_key`, etc.: Keyboard controls
 
+#### Advanced Settings
+- `prediction_strength`: How aggressively to predict target movement (0-100%)
+- `accel_compensation`: How much to compensate for target acceleration (0-100%)
+- `latency_compensation`: System latency compensation in milliseconds (0-100ms)
+
 ## Compatible Games
 This aimbot works with virtually any game that displays targets on screen, including:
 - First-person shooters (CS:GO, Valorant, Call of Duty)
@@ -105,6 +110,13 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 - Customizable settings with save/load functionality
 - Interactive configuration menu
 - Silent operation mode with minimal console output
+
+### Advanced Features
+- **Intelligent Target Prediction**: Predicts target movement for more accurate shots
+- **Bezier Curve Movement**: Natural, human-like mouse movement patterns
+- **Adaptive Learning**: Improves accuracy based on hit/miss statistics
+- **Hardware Optimization**: Automatically detects and optimizes for your system
+- **Advanced Configuration**: Fine-tune prediction strength, acceleration compensation, and latency
 
 ## Troubleshooting
 
