@@ -47,7 +47,7 @@ fi
 # Run the application using the virtual environment
 echo "Starting aimbot..."
 # Check if Python exists and works in the virtual environment
-if [ ! -f ".venv/bin/python" ] || ! .venv/bin/python -c "import cv2, numpy, mss, pyautogui" &>/dev/null; then
+if [ ! -f ".venv/bin/python" ] || ! .venv/bin/python -c "import cv2, numpy, mss, pyautogui, pynput" &>/dev/null; then
     echo "Python interpreter not found or required packages missing. Recreating environment..."
     rm -rf .venv
     python3 -m venv .venv || {
@@ -76,6 +76,8 @@ if ! .venv/bin/python -c "from Xlib import display" &>/dev/null; then
     if ! .venv/bin/python -c "from Xlib import display" &>/dev/null; then
         echo "Warning: Failed to install X11 Python bindings."
         echo "Mouse movement may not work correctly."
+    else
+        echo "Successfully installed X11 Python bindings."
     fi
 fi
 
