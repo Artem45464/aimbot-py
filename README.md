@@ -43,6 +43,7 @@ If the quick start scripts don't work:
 ## Controls
 - Press 'y' to toggle continuous scanning on/off
 - Press 'f' to aim at the last found target (auto-fires if enabled)
+- Press 't' to toggle priority targeting on/off during gameplay
 - Press 'o' to save current configuration
 - Press 'p' to reload configuration
 - Press 'q' to exit
@@ -63,6 +64,7 @@ This allows you to:
 - Configure aim delay
 - Toggle auto-fire functionality
 - Customize keyboard controls
+- Configure target color priorities
 - Reset to default settings
 
 ### 2. Configuration File
@@ -84,6 +86,8 @@ You can modify the following settings:
 - `prediction_strength`: How aggressively to predict target movement (0-100%)
 - `accel_compensation`: How much to compensate for target acceleration (0-100%)
 - `latency_compensation`: System latency compensation in milliseconds (0-100ms)
+- `color_priority`: Priority values for different target colors (higher = higher priority)
+- `use_color_priority`: Whether to prioritize targets by color instead of size
 
 ## Compatible Games
 This aimbot works with virtually any game that displays targets on screen, including:
@@ -98,7 +102,7 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 - Sports games with highlighted players
 
 ## Features
-- Multi-color target detection (red, green, blue, yellow, purple, cyan, orange, white)
+- Multi-color target detection (red, green, blue, yellow, purple, cyan, orange, white, black)
 - Enhanced image processing with contrast enhancement
 - Precise headshot targeting (configurable targeting height)
 - Dynamic area adjustment for targets at different distances
@@ -110,6 +114,8 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 - Customizable settings with save/load functionality
 - Interactive configuration menu
 - Silent operation mode with minimal console output
+- Optimized performance with frame skipping and image downscaling
+- Color classification caching for faster detection
 
 ### Advanced Features
 - **Intelligent Target Prediction**: Predicts target movement for more accurate shots
@@ -117,6 +123,7 @@ This aimbot works with virtually any game that displays targets on screen, inclu
 - **Adaptive Learning**: Improves accuracy based on hit/miss statistics
 - **Hardware Optimization**: Automatically detects and optimizes for your system
 - **Advanced Configuration**: Fine-tune prediction strength, acceleration compensation, and latency
+- **Target Priority System**: Prioritize specific target colors over others with intelligent weighted scoring based on color, size, and position
 
 ## Troubleshooting
 
