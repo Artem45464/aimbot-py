@@ -36,6 +36,14 @@ HEADSHOT_PERCENTAGE = CONFIG['headshot_percentage']
 AIM_DELAY = CONFIG.get('aim_delay', 0.0)  # Default to 0 if not in config
 AUTO_FIRE = CONFIG.get('auto_fire', False)  # Default to False if not in config
 DYNAMIC_AREA = CONFIG.get('dynamic_area', True)  # Default to True if not in config
+# Initialize color priority settings
+if 'color_priority' not in CONFIG:
+    CONFIG['color_priority'] = {
+        'red': 5, 'green': 3, 'blue': 3, 'yellow': 4,
+        'purple': 2, 'cyan': 2, 'orange': 4, 'white': 1
+    }
+if 'use_color_priority' not in CONFIG:
+    CONFIG['use_color_priority'] = False
 
 # Check for required dependencies
 def check_dependencies():
@@ -144,6 +152,52 @@ last_aim_time = 0
 target_velocity_history = []
 accuracy_stats = {'hits': 0, 'misses': 0}
 
+# Color classification helper function
+def classify_color(rgb):
+    """
+    Classify an RGB color into one of the predefined color categories.
+    
+    Args:
+        rgb (tuple): RGB color tuple (r, g, b)
+        
+    Returns:
+        str: Color category name ('red', 'green', etc.)
+    """
+    r, g, b = rgb
+    
+    # Calculate color dominance
+    total = max(1, r + g + b)  # Avoid division by zero
+    r_ratio, g_ratio, b_ratio = r/total, g/total, b/total
+    
+    # Advanced color classification with better thresholds
+    if r > 180 and r > g*1.5 and r > b*1.5:
+        return 'red'
+    elif g > 180 and g > r*1.5 and g > b*1.5:
+        return 'green'
+    elif b > 180 and b > r*1.5 and b > g*1.5:
+        return 'blue'
+    elif r > 180 and g > 180 and b < 100:
+        return 'yellow'
+    elif r > 150 and b > 150 and g < 100:
+        return 'purple'
+    elif g > 150 and b > 150 and r < 100:
+        return 'cyan'
+    elif r > 180 and g > 100 and g < 180 and b < 100:
+        return 'orange'
+    elif r > 200 and g > 200 and b > 200:
+        return 'white'
+    elif r < 80 and g < 80 and b < 80:
+        return 'black'
+    else:
+        # Find dominant color for unclassified colors
+        max_component = max(r_ratio, g_ratio, b_ratio)
+        if r_ratio == max_component:
+            return 'red'
+        elif g_ratio == max_component:
+            return 'green'
+        else:
+            return 'blue'
+
 def find_target(img):
     try:
         # Check if image is valid
@@ -154,11 +208,23 @@ def find_target(img):
         screen_width, screen_height = pyautogui.size()
         img_height, img_width, _ = img.shape
         
+        # Track performance metrics
+        start_time = time.time()
+        
         # Enhanced preprocessing for better detection
-        # Apply contrast enhancement
+        # Apply contrast enhancement with adaptive parameters
         lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        
+        # Calculate image brightness to adapt enhancement
+        mean_brightness = np.mean(l)
+        if mean_brightness < 100:  # Dark image
+            clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))  # Stronger enhancement
+        elif mean_brightness > 200:  # Bright image
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))  # Gentler enhancement
+        else:  # Normal brightness
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))  # Default
+            
         cl = clahe.apply(l)
         enhanced_lab = cv2.merge((cl, a, b))
         img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
@@ -166,10 +232,22 @@ def find_target(img):
         # Create mask from multiple color ranges
         combined_mask = np.zeros(img.shape[:2], dtype=np.uint8)
         
-        for color in TARGET_COLORS:
+        # Track individual color masks for priority-based targeting
+        color_masks = {}
+        for i, color in enumerate(TARGET_COLORS):
             lower = np.array([max(0, c - COLOR_TOLERANCE) for c in color], dtype=np.uint8)
             upper = np.array([min(255, c + COLOR_TOLERANCE) for c in color], dtype=np.uint8)
             color_mask = cv2.inRange(img, lower, upper)
+            
+            # Store the mask with its color for later use
+            color_category = classify_color(color)
+            if color_category not in color_masks:
+                color_masks[color_category] = color_mask
+            else:
+                # Combine masks of the same color category
+                color_masks[color_category] = cv2.bitwise_or(color_masks[color_category], color_mask)
+                
+            # Add to the combined mask
             combined_mask = cv2.bitwise_or(combined_mask, color_mask)
         
         # Advanced mask processing
@@ -194,12 +272,81 @@ def find_target(img):
                 # More aggressive scaling for distant targets (smaller minimum area)
                 min_area = max(3, int(MIN_CONTOUR_AREA * scale_factor))
                 
-        # Filter and find largest contour
+        # Filter valid contours
         valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
         if not valid_contours:
             return None
+        
+        # Check if we should use priority-based targeting
+        use_priority = CONFIG.get('use_color_priority', False)
+        
+        if use_priority and 'color_priority' in CONFIG:
+            # Priority-based target selection with weighted scoring
+            best_contour = None
+            best_score = -1
+            best_color = None
             
-        largest = max(valid_contours, key=cv2.contourArea)
+            # Get screen dimensions for distance calculation
+            screen_center_x = img_width / 2
+            screen_center_y = img_height / 2
+            
+            for contour in valid_contours:
+                # Create a mask for this contour
+                contour_mask = np.zeros_like(mask)
+                cv2.drawContours(contour_mask, [contour], 0, 255, -1)
+                
+                # Find which color this contour belongs to
+                max_overlap = 0
+                contour_color = None
+                
+                for color_name, color_mask in color_masks.items():
+                    # Calculate overlap between contour and this color mask
+                    overlap = cv2.countNonZero(cv2.bitwise_and(contour_mask, color_mask))
+                    if overlap > max_overlap:
+                        max_overlap = overlap
+                        contour_color = color_name
+                
+                if contour_color:
+                    # Get priority for this color
+                    priority = CONFIG['color_priority'].get(contour_color, 0)
+                    area = cv2.contourArea(contour)
+                    
+                    # Calculate center of contour for distance weighting
+                    M = cv2.moments(contour)
+                    if M["m00"] > 0:
+                        cx = int(M["m10"] / M["m00"])
+                        cy = int(M["m01"] / M["m00"])
+                        
+                        # Calculate distance from center of screen (normalized 0-1)
+                        distance = math.sqrt((cx - screen_center_x)**2 + (cy - screen_center_y)**2)
+                        max_distance = math.sqrt(screen_center_x**2 + screen_center_y**2)
+                        distance_factor = 1 - min(1, distance / max_distance)
+                        
+                        # Calculate combined score: priority * 10 + area_factor + center_bonus
+                        # This weights priority highest, then size, with a bonus for central targets
+                        area_factor = min(3, area / 1000)  # Cap area factor at 3
+                        center_bonus = distance_factor * 2  # 0-2 bonus for central position
+                        
+                        score = (priority * 10) + area_factor + center_bonus
+                        
+                        if score > best_score:
+                            best_contour = contour
+                            best_score = score
+                            best_color = contour_color
+            
+            # If we found a priority-based target, use it
+            if best_contour is not None:
+                largest = best_contour
+                # Store the best color for later use
+                globals()['best_color'] = best_color
+                print(f"Selected {best_color} target (score: {best_score:.1f})")
+            else:
+                # Fall back to largest contour if no priority match
+                largest = max(valid_contours, key=cv2.contourArea)
+                globals()['best_color'] = None
+        else:
+            # Traditional largest-contour selection
+            largest = max(valid_contours, key=cv2.contourArea)
         
         # Get target position
         M = cv2.moments(largest)
@@ -251,7 +398,16 @@ def find_target(img):
             target_x /= 2
             target_y /= 2
             
-        return (target_x, target_y, (x, y, w, h))
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        # Get color info if available
+        target_color = None
+        if 'best_color' in globals() and globals()['best_color'] is not None:
+            target_color = globals()['best_color']
+            
+        # Return with original format plus color info
+        return target_x, target_y, (x, y, w, h), target_color
     except Exception as e:
         print(f"Target detection error: {e}")
         return None
@@ -489,23 +645,28 @@ def aim_at_target(x, y):
         print(f"Aiming error: {e}")
         return False
 
+# Get toggle priority key from config
+TOGGLE_PRIORITY_KEY = CONFIG.get('toggle_priority_key', 't')  # Default key for toggling priority targeting
+
 # Global variables for key states
 key_states = {
     SCAN_KEY: False,
     AIM_KEY: False,
     EXIT_KEY: False,
     SAVE_CONFIG_KEY: False,
-    LOAD_CONFIG_KEY: False
+    LOAD_CONFIG_KEY: False,
+    TOGGLE_PRIORITY_KEY: False
 }
 last_key_time = {
     SCAN_KEY: 0,
     AIM_KEY: 0,
     EXIT_KEY: 0,
     SAVE_CONFIG_KEY: 0,
-    LOAD_CONFIG_KEY: 0
+    LOAD_CONFIG_KEY: 0,
+    TOGGLE_PRIORITY_KEY: 0
 }
 # Track which keys should actually trigger actions
-action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY]
+action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, TOGGLE_PRIORITY_KEY]
 key_lock = threading.Lock()
 
 # Keyboard listener setup
@@ -573,6 +734,9 @@ def key_pressed():
         elif key_states[LOAD_CONFIG_KEY]:
             key_states[LOAD_CONFIG_KEY] = False  # Reset after reading
             return LOAD_CONFIG_KEY
+        elif key_states[TOGGLE_PRIORITY_KEY]:
+            key_states[TOGGLE_PRIORITY_KEY] = False  # Reset after reading
+            return TOGGLE_PRIORITY_KEY
     return None
 
 # Function to update configuration from current settings
@@ -597,6 +761,15 @@ def update_config_from_current():
         CONFIG['accel_compensation'] = 50
     if 'latency_compensation' not in CONFIG:
         CONFIG['latency_compensation'] = 50
+    
+    # Save color priority settings
+    if 'color_priority' not in CONFIG:
+        CONFIG['color_priority'] = {
+            'red': 5, 'green': 3, 'blue': 3, 'yellow': 4,
+            'purple': 2, 'cyan': 2, 'orange': 4, 'white': 1
+        }
+    if 'use_color_priority' not in CONFIG:
+        CONFIG['use_color_priority'] = False
         
     # Convert tuples to lists for JSON serialization
     CONFIG['target_colors'] = [list(color) for color in TARGET_COLORS]
@@ -605,8 +778,11 @@ def update_config_from_current():
 # Function to update current settings from configuration
 def update_current_from_config():
     global TARGET_COLORS, COLOR_TOLERANCE, MIN_CONTOUR_AREA
-    global SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, HEADSHOT_PERCENTAGE, AIM_DELAY, AUTO_FIRE, DYNAMIC_AREA
+    global SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, TOGGLE_PRIORITY_KEY, HEADSHOT_PERCENTAGE, AIM_DELAY, AUTO_FIRE, DYNAMIC_AREA
     global key_states, last_key_time, action_keys
+    
+    # Get toggle priority key from config
+    TOGGLE_PRIORITY_KEY = CONFIG.get('toggle_priority_key', 't')
     
     # Update all settings from CONFIG
     TARGET_COLORS = [tuple(color) for color in CONFIG['target_colors']]
@@ -622,22 +798,33 @@ def update_current_from_config():
     AUTO_FIRE = CONFIG.get('auto_fire', False)  # Default to False if not in config
     DYNAMIC_AREA = CONFIG.get('dynamic_area', True)  # Default to True if not in config
     
+    # Initialize color priority settings if not present
+    if 'color_priority' not in CONFIG:
+        CONFIG['color_priority'] = {
+            'red': 5, 'green': 3, 'blue': 3, 'yellow': 4,
+            'purple': 2, 'cyan': 2, 'orange': 4, 'white': 1
+        }
+    if 'use_color_priority' not in CONFIG:
+        CONFIG['use_color_priority'] = False
+    
     # Update key tracking
     key_states = {
         SCAN_KEY: False,
         AIM_KEY: False,
         EXIT_KEY: False,
         SAVE_CONFIG_KEY: False,
-        LOAD_CONFIG_KEY: False
+        LOAD_CONFIG_KEY: False,
+        TOGGLE_PRIORITY_KEY: False
     }
     last_key_time = {
         SCAN_KEY: 0,
         AIM_KEY: 0,
         EXIT_KEY: 0,
         SAVE_CONFIG_KEY: 0,
-        LOAD_CONFIG_KEY: 0
+        LOAD_CONFIG_KEY: 0,
+        TOGGLE_PRIORITY_KEY: 0
     }
-    action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY]
+    action_keys = [SCAN_KEY, AIM_KEY, EXIT_KEY, SAVE_CONFIG_KEY, LOAD_CONFIG_KEY, TOGGLE_PRIORITY_KEY]
     
     # Print the updated configuration
     config.print_config(CONFIG)
@@ -650,17 +837,34 @@ def reload_config():
 
 # Main aimbot function
 def aimbot():
+    # Get the latest toggle priority key from config
+    toggle_key = CONFIG.get('toggle_priority_key', 't')
+    
     print("Aimbot started!")
     print(f"Running on {platform.system()}")
     print(f"Press '{SCAN_KEY}' to toggle continuous scanning on/off")
     print(f"Press '{AIM_KEY}' to aim at the last found target")
     print(f"Press '{SAVE_CONFIG_KEY}' to save current configuration")
     print(f"Press '{LOAD_CONFIG_KEY}' to reload configuration")
+    print(f"Press '{toggle_key}' to toggle priority targeting on/off")
     print(f"Press '{EXIT_KEY}' to exit")
     
     # Show auto fire status
     if AUTO_FIRE:
         print("Auto fire is ENABLED - will automatically click when aiming")
+        
+    # Show priority targeting status
+    if CONFIG.get('use_color_priority', False):
+        print("Priority-based targeting is ENABLED - will prioritize targets by color")
+        priorities = sorted(CONFIG['color_priority'].items(), key=lambda x: x[1], reverse=True)
+        print("Color priorities (high to low):")
+        top_colors = []
+        for color, priority in priorities[:3]:  # Show top 3 colors
+            print(f"  {color.capitalize()}: {priority}")
+            top_colors.append(color.capitalize())
+        
+        print(f"Primary targets: {', '.join(top_colors)}")
+        print("Target selection uses weighted scoring based on color priority, size, and position")
     
     # Print current configuration
     config.print_config(CONFIG)
@@ -682,7 +886,7 @@ def aimbot():
             
         # Toggle scanning on/off
         if key == SCAN_KEY:
-            scanning_active = not scanning_active
+            scanning_active = noscanning_active = noscanning_active = noscanning_active = noscanning_active = noscanning_active = noscanning_active = not scanning_active
             if scanning_active:
                 print("Continuous scanning activated")
             else:
@@ -702,6 +906,18 @@ def aimbot():
             print("Reloading configuration...")
             reload_config()
             print("Configuration reloaded!")
+            
+        # Toggle priority targeting
+        if key == TOGGLE_PRIORITY_KEY:
+            CONFIG['use_color_priority'] = not CONFIG.get('use_color_priority', False)
+            if CONFIG['use_color_priority']:
+                print("Priority targeting ENABLED")
+                # Show top priority colors
+                priorities = sorted(CONFIG['color_priority'].items(), key=lambda x: x[1], reverse=True)
+                top_colors = [color.capitalize() for color, _ in priorities[:3]]
+                print(f"Prioritizing: {', '.join(top_colors)}")
+            else:
+                print("Priority targeting DISABLED - using largest target")
         
         # Scan if scanning is active
         if scanning_active:
@@ -713,9 +929,20 @@ def aimbot():
             target_info = find_target(screen)
             
             if target_info:
-                x, y, bbox = target_info
-                print(f"Target found at ({int(x)}, {int(y)})")
-                current_target = (x, y)
+                # Unpack target info (now includes color)
+                if len(target_info) > 3:
+                    x, y, bbox, target_color = target_info
+                else:
+                    x, y, bbox = target_info
+                    target_color = "unknown"
+                
+                # Print more detailed target info
+                if CONFIG.get('use_color_priority', False) and target_color != "unknown":
+                    print(f"Target found at ({int(x)}, {int(y)}) - Color: {target_color}")
+                else:
+                    print(f"Target found at ({int(x)}, {int(y)})")
+                
+                current_target = (x, y, target_color) if target_color != "unknown" else (x, y)
                 
                 # Update region for next scan (with padding)
                 padding = 100
@@ -760,8 +987,13 @@ def aimbot():
         # Aim at target if AIM_KEY is pressed and we have a target
         if key == AIM_KEY:
             if current_target:
-                x, y = current_target
-                print(f"Aiming at ({int(x)}, {int(y)})")
+                # Handle both formats (with or without color)
+                if len(current_target) > 2:
+                    x, y, target_color = current_target
+                    print(f"Aiming at {target_color} target at ({int(x)}, {int(y)})")
+                else:
+                    x, y = current_target
+                    print(f"Aiming at ({int(x)}, {int(y)})")
                 
                 # Apply aim delay if configured
                 if AIM_DELAY > 0:
@@ -812,6 +1044,18 @@ def main():
     # Check if dynamic_area is in the config, add it if not
     if 'dynamic_area' not in CONFIG:
         CONFIG['dynamic_area'] = True
+        config.save_config(CONFIG)
+        
+    # Check if color priority settings are in the config, add them if not
+    if 'color_priority' not in CONFIG:
+        CONFIG['color_priority'] = {
+            'red': 5, 'green': 3, 'blue': 3, 'yellow': 4,
+            'purple': 2, 'cyan': 2, 'orange': 4, 'white': 1
+        }
+        config.save_config(CONFIG)
+        
+    if 'use_color_priority' not in CONFIG:
+        CONFIG['use_color_priority'] = False
         config.save_config(CONFIG)
         
     # Check dependencies
