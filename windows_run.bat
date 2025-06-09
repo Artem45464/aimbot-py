@@ -36,8 +36,22 @@ REM Check Python version (must be 3.6 or higher)
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Python 3.6 or higher is required.
     for /f "tokens=*" %%i in ('%PYTHON% -c "import sys; print(\"Current Python version: \" + \".\".join(map(str, sys.version_info[:3])))"') do echo %%i
+    echo Please download and install Python 3.6 or higher from https://www.python.org/downloads/windows/
     pause
     exit /b 1
+)
+
+REM Check if pip is installed
+%PYTHON% -m pip --version >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: pip is not installed or not working correctly.
+    echo Installing pip...
+    %PYTHON% -m ensurepip
+    if %ERRORLEVEL% NEQ 0 (
+        echo Failed to install pip. Please install pip manually.
+        pause
+        exit /b 1
+    )
 )
 goto :setup_env
 
@@ -54,6 +68,9 @@ if not exist .venv\ (
         exit /b 1
     )
     
+    echo Upgrading pip...
+    .venv\Scripts\python -m pip install --upgrade pip
+    
     echo Installing dependencies...
     .venv\Scripts\pip install -r requirements.txt
     if %ERRORLEVEL% NEQ 0 (
@@ -61,9 +78,11 @@ if not exist .venv\ (
     )
     
     echo Installing Windows-specific packages...
-    .venv\Scripts\pip install pywin32
+    .venv\Scripts\pip install --no-cache-dir pywin32
     if %ERRORLEVEL% NEQ 0 (
         echo Warning: Failed to install Windows-specific packages.
+        echo Trying alternative installation method...
+        .venv\Scripts\pip install --no-cache-dir pypiwin32
     )
     
     echo Setup complete!
@@ -80,8 +99,23 @@ if not exist .venv\Scripts\python.exe (
 REM Verify required packages are installed
 .venv\Scripts\python -c "import cv2, numpy, mss, pyautogui, pynput" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo Required packages missing. Recreating environment...
-    goto :recreate_env
+    echo Required packages missing. Attempting to install missing packages...
+    
+    REM Try installing packages individually
+    for %%p in (numpy opencv-python mss pyautogui pynput) do (
+        echo Installing %%p...
+        .venv\Scripts\pip install %%p
+    )
+    
+    REM Check if packages are now installed
+    .venv\Scripts\python -c "import cv2, numpy, mss, pyautogui, pynput" >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo Failed to install packages individually. Recreating environment...
+        goto :recreate_env
+    ) else (
+        echo Successfully installed missing packages.
+        goto :run_app
+    )
 )
 goto :run_app
 
@@ -124,6 +158,15 @@ if %ERRORLEVEL% NEQ 0 (
 goto :run_app
 
 :run_app
+REM Check for toggle priority key in config
+if exist "%USERPROFILE%\aimbot_config.json" (
+    findstr /C:"toggle_priority_key" "%USERPROFILE%\aimbot_config.json" >nul
+    if %ERRORLEVEL% NEQ 0 (
+        echo Updating configuration with toggle priority key...
+        powershell -Command "(Get-Content '%USERPROFILE%\aimbot_config.json') -replace '\"use_color_priority\": false', '\"use_color_priority\": false,\n    \"toggle_priority_key\": \"t\"' | Set-Content '%USERPROFILE%\aimbot_config.json'"
+    )
+)
+
 .venv\Scripts\python main.py %*
 
 REM If we get here, the program has exited
