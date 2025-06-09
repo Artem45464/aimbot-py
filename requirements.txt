@@ -1,9 +1,10 @@
-pyautogui==0.9.54
-mss==9.0.1
+pyautogui>=0.9.54,<0.10.0
+mss>=6.0.0,<10.0.0
 numpy==1.24.3
-opencv-python==4.8.0.76
+opencv-python>=4.5.0,<5.0; platform_system!="Darwin" or platform_release>="20.0"
+opencv-python-headless>=4.5.0,<5.0; platform_system=="Darwin" and platform_release<"20.0"
 pynput==1.7.6
 python-xlib==0.33; platform_system=="Linux" or platform_system=="Darwin"
 pywin32==306; platform_system=="Windows"
-pyobjc-core==9.2; platform_system=="Darwin"
-pyobjc-framework-Quartz==9.2; platform_system=="Darwin"
+pyobjc-core>=8.0,<10.0; platform_system=="Darwin"
+pyobjc-framework-Quartz>=8.0,<10.0; platform_system=="Darwin"
