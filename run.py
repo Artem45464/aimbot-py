@@ -165,36 +165,67 @@ def detect_system_capabilities():
             
         elif platform.system() == "Linux":
             # Linux memory detection
-            with open('/proc/meminfo', 'r') as f:
-                for line in f:
-                    if 'MemTotal' in line:
-                        system_info["memory"] = int(line.split()[1]) / (1024**2)  # Convert to GB
-                        break
+            try:
+                with open('/proc/meminfo', 'r') as f:
+                    for line in f:
+                        if 'MemTotal' in line:
+                            parts = line.split()
+                            if len(parts) > 1:
+                                system_info["memory"] = int(parts[1]) / (1024**2)  # Convert to GB
+                            break
+            except (IOError, ValueError, IndexError):
+                system_info["memory"] = "unknown"
                         
         elif platform.system() == "Darwin":  # macOS
             # macOS memory detection
-            output = subprocess.check_output(['sysctl', 'hw.memsize']).decode('utf-8')
-            system_info["memory"] = int(output.split()[1]) / (1024**3)  # Convert to GB
+            try:
+                output = subprocess.check_output(['sysctl', 'hw.memsize']).decode('utf-8')
+                parts = output.split()
+                if len(parts) > 1:
+                    system_info["memory"] = int(parts[1]) / (1024**3)  # Convert to GB
+            except (subprocess.SubprocessError, ValueError, IndexError):
+                system_info["memory"] = "unknown"
     except Exception as e:
         print(f"Warning: Could not detect memory: {e}")
     
     # Detect GPU if possible
     try:
         if platform.system() == "Windows":
-            output = subprocess.check_output(['wmic', 'path', 'win32_VideoController', 'get', 'name']).decode('utf-8')
-            system_info["gpu"] = output.strip().split('\\n')[1].strip()
+            try:
+                output = subprocess.check_output(['wmic', 'path', 'win32_VideoController', 'get', 'name']).decode('utf-8')
+                lines = output.strip().split('\n')
+                if len(lines) > 1:
+                    system_info["gpu"] = lines[1].strip()
+                else:
+                    system_info["gpu"] = "unknown"
+            except (subprocess.SubprocessError, IndexError):
+                system_info["gpu"] = "unknown"
         elif platform.system() == "Linux":
-            output = subprocess.check_output(['lspci'], stderr=subprocess.STDOUT).decode('utf-8')
-            for line in output.split('\\n'):
-                if 'VGA' in line or '3D' in line:
-                    system_info["gpu"] = line.split(':')[-1].strip()
-                    break
+            try:
+                output = subprocess.check_output(['lspci'], stderr=subprocess.STDOUT).decode('utf-8')
+                for line in output.split('\n'):
+                    if 'VGA' in line or '3D' in line:
+                        parts = line.split(':')
+                        if len(parts) > 1:
+                            system_info["gpu"] = parts[-1].strip()
+                        else:
+                            system_info["gpu"] = "unknown"
+                        break
+            except subprocess.SubprocessError:
+                system_info["gpu"] = "unknown"
         elif platform.system() == "Darwin":
-            output = subprocess.check_output(['system_profiler', 'SPDisplaysDataType']).decode('utf-8')
-            for line in output.split('\\n'):
-                if 'Chipset Model' in line:
-                    system_info["gpu"] = line.split(':')[-1].strip()
-                    break
+            try:
+                output = subprocess.check_output(['system_profiler', 'SPDisplaysDataType']).decode('utf-8')
+                for line in output.split('\n'):
+                    if 'Chipset Model' in line:
+                        parts = line.split(':')
+                        if len(parts) > 1:
+                            system_info["gpu"] = parts[-1].strip()
+                        else:
+                            system_info["gpu"] = "unknown"
+                        break
+            except subprocess.SubprocessError:
+                system_info["gpu"] = "unknown"
     except Exception:
         system_info["gpu"] = "unknown"
     
