@@ -61,8 +61,26 @@ DEFAULT_CONFIG = {
         # White/Gray colors (for white targets)
         [255, 255, 255], # Pure white
         [220, 220, 220], # Light gray
-        [200, 200, 200]  # Medium gray
+        [200, 200, 200], # Medium gray
+        
+        # Black colors
+        [0, 0, 0],      # Pure black
+        [20, 20, 20],   # Near black
+        [40, 40, 40]    # Dark gray
     ],
+    'color_priority': {
+        'red': 10,      # Highest priority
+        'green': 3,
+        'blue': 3,
+        'yellow': 6,
+        'purple': 4,
+        'cyan': 2,
+        'orange': 8,
+        'white': 1,     # Lowest priority
+        'black': 5      # Medium priority
+    },
+    'use_color_priority': False,  # Disabled by default
+    'toggle_priority_key': 't',   # Key to toggle priority targeting
     'color_tolerance': 60,
     'min_contour_area': 15,
     'scan_key': 'y',
@@ -155,6 +173,16 @@ def print_config(config):
     print(f"Acceleration Compensation: {config.get('accel_compensation', 50)}%")
     print(f"Latency Compensation: {config.get('latency_compensation', 50)}ms")
     
+    # Target priority settings
+    print("\nTarget Priority:")
+    print(f"Priority-based Targeting: {'Enabled' if config.get('use_color_priority', False) else 'Disabled'}")
+    print(f"Toggle Priority Key: '{config.get('toggle_priority_key', 't')}'")
+    if 'color_priority' in config:
+        priorities = sorted(config['color_priority'].items(), key=lambda x: x[1], reverse=True)
+        print("Color Priorities (high to low):")
+        for color, priority in priorities:
+            print(f"  {color.capitalize()}: {priority}")
+    
     print("\nKeyboard Controls:")
     print(f"Scan Toggle: '{config['scan_key']}'")
     print(f"Aim: '{config['aim_key']}'")
@@ -183,10 +211,12 @@ def modify_config(config):
     print("6. Toggle auto fire")
     print("7. Change keyboard controls")
     print("8. Advanced targeting settings")
-    print("9. Reset to defaults")
+    print("9. Configure target priorities")
+    print("10. Configure toggle priority key")
+    print("11. Reset to defaults")
     print("0. Back to main menu")
     
-    choice = input("Enter your choice (1-9): ")
+    choice = input("Enter your choice (0-11): ")
     
     if choice == '1':
         try:
@@ -341,6 +371,80 @@ def modify_config(config):
                 print("Invalid input. Please enter a number.")
     
     elif choice == '9':
+        print("\n=== Target Priority Configuration ===")
+        print("Configure which colors should be prioritized when multiple targets are detected.")
+        print("Higher values = higher priority (1-10)")
+        
+        # Initialize color priority if it doesn't exist
+        if 'color_priority' not in config:
+            config['color_priority'] = {
+                'red': 10,      # Highest priority
+                'green': 3,
+                'blue': 3,
+                'yellow': 6,
+                'purple': 4,
+                'cyan': 2,
+                'orange': 8,
+                'white': 1,     # Lowest priority
+                'black': 5      # Medium priority
+            }
+        # Make sure black is included in color priorities
+        if 'black' not in config['color_priority']:
+            config['color_priority']['black'] = 5
+        
+        # Show current priorities
+        print("\nCurrent priorities:")
+        for color, priority in config['color_priority'].items():
+            print(f"{color.capitalize()}: {priority}")
+        
+        # Allow user to modify priorities
+        print("\nEnter new priority values (1-10) or press Enter to keep current value:")
+        
+        # Sort colors by current priority for better UX
+        sorted_colors = sorted(config['color_priority'].items(), key=lambda x: x[1], reverse=True)
+        
+        for color, current in sorted_colors:
+            try:
+                value = input(f"{color.capitalize()} (current: {current}): ")
+                if value.strip():
+                    value = int(value)
+                    if 1 <= value <= 10:
+                        config['color_priority'][color] = value
+                        print(f"{color.capitalize()} priority set to {value}")
+                    else:
+                        print("Value must be between 1 and 10")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+        
+        # Ask if user wants to enable priority-based targeting
+        current_setting = config.get('use_color_priority', False)
+        enable = input(f"\nEnable priority-based targeting? (y/n) [current: {'y' if current_setting else 'n'}]: ")
+        
+        if enable.strip():
+            config['use_color_priority'] = enable.lower() == 'y'
+        
+        # Show target selection strategy based on setting
+        if config['use_color_priority']:
+            print("\nPriority-based targeting enabled")
+            print("Target selection strategy: Will prioritize targets by color according to priority values")
+            print("Highest priority colors: " + ", ".join([c.capitalize() for c, p in sorted(config['color_priority'].items(), key=lambda x: x[1], reverse=True)[:3]]))
+        else:
+            print("\nPriority-based targeting disabled")
+            print("Target selection strategy: Will select the largest target regardless of color")
+            
+    elif choice == '10':
+        # Configure toggle priority key
+        if 'toggle_priority_key' not in config:
+            config['toggle_priority_key'] = 't'  # Default key
+            
+        key = input(f"Enter new toggle priority key (current: '{config.get('toggle_priority_key', 't')}'): ")
+        if key and len(key) == 1:
+            config['toggle_priority_key'] = key.lower()
+            print(f"Toggle priority key set to '{key.lower()}'")
+        else:
+            print("Invalid key. Please enter a single character.")
+            
+    elif choice == '11':
         confirm = input("Are you sure you want to reset to default settings? (y/n): ")
         if confirm.lower() == 'y':
             print("Configuration reset to defaults.")
